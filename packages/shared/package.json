@@ -1,0 +1,78 @@
+{
+  "name": "@opensignet/shared",
+  "version": "0.1.0",
+  "description": "Public TypeScript contracts, Zod schemas, constants, and utilities for OpenSignet",
+  "keywords": [
+    "opensignet",
+    "ai-agents",
+    "typescript",
+    "schemas",
+    "zod",
+    "base"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenSignetOrg/opensignet.git",
+    "directory": "packages/shared"
+  },
+  "homepage": "https://docs.opensignet.com/sdk/typescript",
+  "bugs": {
+    "url": "https://github.com/OpenSignetOrg/opensignet/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./constants": {
+      "types": "./dist/constants.d.ts",
+      "import": "./dist/constants.js",
+      "default": "./dist/constants.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js",
+      "default": "./dist/types.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas.d.ts",
+      "import": "./dist/schemas.js",
+      "default": "./dist/schemas.js"
+    },
+    "./utils": {
+      "types": "./dist/utils.d.ts",
+      "import": "./dist/utils.js",
+      "default": "./dist/utils.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "package.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "pnpm run build",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "test": "pnpm run build && node --test \"test/*.test.ts\""
+  },
+  "dependencies": {
+    "viem": "^2.56.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2"
+  }
+}
