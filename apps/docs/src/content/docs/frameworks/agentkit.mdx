@@ -1,0 +1,110 @@
+---
+title: Coinbase AgentKit
+description: Add OpenSignet registration, DNS, email, plans, and renewal actions to Coinbase AgentKit.
+---
+
+## Install
+
+:::note[Package availability]
+Version 0.1.0 is not yet published to npm. Until it is, build from a source checkout of the
+[public repository](https://github.com/OpenSignetOrg/opensignet).
+:::
+
+```bash
+npm install @opensignet/agentkit-plugin@0.1.0 "@coinbase/agentkit@^0.1.0"
+```
+
+The plugin declares the `@coinbase/agentkit: ^0.1.0` peer range.
+
+## Create the provider
+
+```ts
+import { OpenSignetActionProvider } from '@opensignet/agentkit-plugin';
+
+const provider = new OpenSignetActionProvider({
+  builderCode: 'my_agent_app',
+  renewalVaultAddress: '0xb7b19826a566ebd9e8b50bee986a8da04bbb2c0a',
+});
+
+const actions = provider.getActions();
+```
+
+| Option                | Default                             | Use                                                                                         |
+| --------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------- |
+| `apiUrl`              | `https://api.opensignet.com/api/v1` | Set only for another documented OpenSignet environment.                                     |
+| `apiKey`              | none                                | Agent-scoped key for DNS, email, and management calls. Load it from a secret store.         |
+| `network`             | `base`                              | `base` or `base-sepolia`.                                                                   |
+| `baseRpcUrl`          | `https://mainnet.base.org`          | Base RPC used for wallet operations and receipts.                                           |
+| `builderCode`         | none                                | Public ERC-8021 app code. Required for direct Base writes: auto-renew and vault withdrawal. |
+| `renewalVaultAddress` | none                                | RenewalVault address. Required for auto-renew.                                              |
+
+The public builder code is needed only for direct Base writes. Missing or invalid attribution
+stops those actions before a transaction is sent; reads, signatures, and x402 paid requests do not
+use it. Wallet authorization is supplied by the AgentKit runtime, not embedded in the provider
+options.
+
+## Wallet requirements
+
+Each action has a `name`, a `description`, a Zod `schema`, and `invoke(walletProvider, args)`. The
+wallet provider is the one your AgentKit setup already uses:
+
+- `getAddress()` identifies the wallet for every action.
+- `signMessage` authorizes wallet-scoped API calls when no `apiKey` is set.
+- `signTypedData` signs x402 USDC payments.
+- `sendTransaction` submits direct Base writes such as auto-renew and vault withdrawal.
+
+Use a dedicated wallet that holds only the authority and USDC the agent needs.
+
+## Quote, confirm, register
+
+```ts
+const byName = new Map(provider.getActions().map((action) => [action.name, action]));
+
+async function run(name: string, input: unknown) {
+  const action = byName.get(name);
+  if (!action) throw new Error(`Unknown OpenSignet action: ${name}`);
+  return action.invoke(walletProvider, action.schema.parse(input));
+}
+
+const request = {
+  preferredName: 'research-agent',
+  tld: 'xyz',
+  years: 1,
+  registerBasename: false,
+};
+
+console.log(await run('quote_agent_registration', request));
+// Show the quote to the person or policy that approves spending, then continue only on approval.
+console.log(await run('register_agent_identity', request));
+```
+
+The quote lists the domain and any Basename or ENS amount for the requested term. Basename and
+ENS are off by default; pass `registerBasename: true` or `registerEns: true` to add them. Plans
+apply to the whole account and are bought by a person from the dashboard or the
+[pricing page](https://opensignet.com/pricing), never during registration. With `autoRenew: true` and a
+`renewalVaultAddress`, registration also submits the auto-renew setting from the same wallet, which
+needs `sendTransaction` and `builderCode`.
+
+## Actions
+
+| Area         | Actions                                                                                                                                                                                                        | Notes                                                                                                              |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Registration | `quote_agent_registration`, `register_agent_identity`                                                                                                                                                          | Quotes are free. Registration pays USDC on Base through x402.                                                      |
+| Email        | `send_agent_email`, `send_agent_email_batch`, `list_agent_email`, `delete_agent_email`, `get_agent_email_usage`, `configure_email_webhook`, `update_primary_email`, `create_email_alias`, `delete_email_alias` | Batches queue up to 100 messages. Aliases need Plus, Pro, Max, or Enterprise. Deleting a message cannot be undone. |
+| DNS          | `get_dns_capabilities`, `list_dns_records`, `create_dns_record`, `update_dns_record`, `delete_dns_record`, `change_dns_records`, `import_dns_zone`, `export_dns_zone`                                          | Batches and zone imports preview by default (`dryRun: true`).                                                      |
+| Plans        | `get_service_plan`                                                                                                                                                                                             | Reads the limits an identity has from its account plan. Plans are bought on opensignet.com, not through actions.   |
+| Renewal      | `get_renewal_status`, `fund_renewal_vault`, `enable_auto_renew`, `withdraw_renewal_vault`                                                                                                                      | Anyone can fund a vault. Only the AgentID owner can enable auto-renew or withdraw.                                 |
+
+## Safety
+
+- Require explicit approval before actions that move funds: `register_agent_identity` and
+  `fund_renewal_vault`. Call `get_renewal_status` before funding and
+  usually deposit the returned shortfall.
+- Treat `enable_auto_renew` and `withdraw_renewal_vault` as owner-only changes.
+- For DNS, call `get_dns_capabilities`, preview a batch, review it, then apply it with
+  `dryRun: false` and the returned `baseRevision`. Start with `merge`; use `replace` only when the
+  batch is the complete user-managed desired state.
+- Keep `apiKey` in a trusted secret store. It is never needed in browser configuration.
+
+See [registration](/guides/registration/), [DNS management](/guides/dns/), and
+[renewals](/guides/renewal/) for the public contracts these actions follow.

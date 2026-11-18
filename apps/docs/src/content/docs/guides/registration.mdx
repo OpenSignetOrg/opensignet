@@ -1,0 +1,111 @@
+---
+title: Registration
+description: Plan, quote, pay for, and track an OpenSignet identity without duplicate checkout.
+---
+
+## 1. Choose the owner and bundle
+
+Decide which wallet will own the AgentID NFT and optional onchain names. The paying wallet can be
+different, but only the final owner can perform owner-only actions later.
+
+Choose:
+
+- a domain label and one of the supported endings: `.com`, `.xyz`, `.ai`, `.org`, `.io`, `.net`, `.co` or `.app`;
+- a registration term from 1 through 10 years;
+- whether to add Basename or ENS;
+- a primary email username.
+
+Plans are not part of registration. They apply to the whole account and are bought or changed only
+from the dashboard or the [pricing page](https://opensignet.com/pricing).
+
+## 2. Check availability and quote
+
+Use the SDK or public endpoints:
+
+```ts
+const availability = await openSignet.checkAvailability('research-agent', { tld: 'com' });
+if (!availability.available) throw new Error(availability.reason ?? 'Name unavailable');
+
+const quote = await openSignet.quote({
+  preferredName: 'research-agent',
+  tld: 'com',
+  registerBasename: true,
+  registerEns: false,
+  emailUsername: 'hello',
+  years: 1,
+});
+```
+
+Display `totalUsdc` and the itemized components before requesting payment. Availability and prices
+can change, so do not cache a quote as a guaranteed reservation.
+
+## 3. Register once
+
+The SDK creates a single request-bound EIP-3009 payment signature. Send
+`Prefer: respond-async` and submit the exact challenged request once. The initial `402` includes
+an opaque `accepts[0].extra.registrationQuote` string and an ISO `quoteExpiresAt` in the same
+`extra` object. Echo the full selected requirement as `accepted` unchanged, including all metadata;
+do not decode or rebuild the sealed quote or reprice the request. The SDK validates the bound Base
+USDC payment requirements and optional quote expiry before signing. Keep the `registrationId`
+and `statusUrl` returned by HTTP `202`. Acceptance is not completion.
+
+The SDK's `submitRegistration()` returns this acceptance response, and `register()` waits using
+authenticated status GETs. Never treat `202` as a final result. See
+[asynchronous registration](/sdk/typescript/#asynchronous-registration) and the
+[compatibility notes](/sdk/typescript/#compatibility).
+
+If the response is `processing`, poll or display the accepted state rather than starting another
+paid registration. A second checkout can represent a distinct payment intent.
+
+Status reads require the payer's web session cookie or `X-Agent-Signature`, not an agent API key or a
+payment proof. The payer may differ from the designated NFT owner. Reuse a fresh read signature
+between polls instead of prompting on every request. A timeout or abort stops local waiting, not
+the accepted purchase. Never automatically resubmit after a lost response.
+
+The SDK reports `RegistrationPaymentRejectedError` only for an explicit HTTP `4xx` response
+other than `408` satisfying the public rejection schema, including
+`paymentSubmission: { status: 'rejected', settlementAttempted: false }`. It exposes code
+`REGISTRATION_PAYMENT_REJECTED`, `serverCode`, `message`, `handle`, and
+`settlementAttempted: false`. This confirms no settlement attempt for that rejected submission,
+not payment success or the outcome of a previous ambiguous attempt. HTTP `408`, `5xx`, timeouts,
+network failures, and unconfirmed conflicts remain `RegistrationPendingError` recovery cases.
+Retain the handle and use payer-authenticated reads for uncertain outcomes. Neither error
+authorizes an automatic resend, repricing, or replacement signature, including after a later
+challenge or quote expiry.
+
+## 4. Confirm readiness
+
+Before advertising the identity, wait for registration status `completed`, meaning the identity
+and all selected services are ready. Payment settlement and an `agentId` are not enough. DNS,
+email, and selected names can require additional time after acceptance. Estimates may be
+unavailable and completion is not guaranteed to be instant.
+
+`action_required`, `failed`, `refunded`, and `awaiting_payment` stop the SDK waiter with a structured
+diagnostic. Inspect the state rather than assuming a new payment is needed. A completed status may
+lack `result` for older records; the SDK preserves the handle and reports
+`completion_result_unavailable` instead of inventing transaction or NFT fields.
+
+## 5. Keep recovery notices separate from status
+
+The [registration notice endpoints](/api-reference/register/#registration-notices) support saved
+popup and dashboard reminders for the authenticated payer. All notice requests require
+`expectedPayer`; verify `X-Authenticated-Wallet` before using the response. Use a retained
+`clientId` for an uncertain submission, then associate a known `registrationId` when available.
+A `submission_unknown` notice is a recovery reminder, not proof that payment failed or succeeded.
+
+Closing a popup or dashboard notice dismisses only that channel. It does not cancel registration,
+stop or refund payment, or dismiss the other channel. Popup notices expire after 5 days and
+dashboard notices after 10 days from original creation. Physical cleanup follows on the next
+successful scheduled cleanup, not at an exact deletion instant; no backup deletion or secure
+erasure is promised. Retain recovery handles separately while an outcome remains uncertain.
+
+## 6. Prepare continuity
+
+After the AgentID NFT is available:
+
+1. Read the [renewal status](/guides/renewal/).
+2. Fund the identity's vault for the expected renewal amount.
+3. Have the owner turn on automatic renewal from their wallet, if wanted.
+4. Monitor the public expiry and renewal state.
+
+For raw request fields and response shapes, see the [Registration API](/api-reference/register/).

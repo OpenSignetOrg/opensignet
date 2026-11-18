@@ -1,0 +1,162 @@
+---
+title: Email API
+description: Read and send email, manage addresses, inspect usage, and configure signed webhooks.
+---
+
+Email endpoints require an API key scoped to the identity, or a signed-in session or wallet
+request signature of the account that owns it. See
+[authentication](/api-reference/overview/#authentication).
+
+## Inbox and retention
+
+```http
+GET    /api/v1/agents/:id/email
+DELETE /api/v1/agents/:id/email/:messageId
+```
+
+Use `limit` and `unreadOnly` on list requests. Accepted message content is available for 30 days.
+Deleting a message makes it unavailable immediately.
+The response can also include `addressChange` and `mailStatus`. `sync=false` skips the current
+provider check and may return `mailStatus.state: "unchecked"`; this is not a readiness confirmation.
+`addressChange: { "phase": "unavailable" }` means the change status could not be checked. Other
+inbox data can still be read, but do not infer that no request is pending or that it completed.
+
+## Primary address and aliases
+
+```http
+PATCH  /api/v1/agents/:id/email
+POST   /api/v1/agents/:id/email/aliases
+DELETE /api/v1/agents/:id/email/aliases?emailAddress=billing@example.com
+```
+
+Changing the primary username requires `confirmReplace: true`. After completion, the previous
+primary address stops accepting new mail; existing messages remain available until deleted or expired.
+
+Depending on the inbox, these operations return either the existing completed result or
+HTTP `202` with a `change` object containing `requestId`, `action`, `target`, and `phase`. An already-completed asynchronous
+request returns the same `change` shape with HTTP `200` and phase `completed`. Alias creation can
+still return its immediate completed result with HTTP `201`.
+
+For asynchronous changes, send a UUID `Idempotency-Key` and preserve it with the operation.
+Retry an unconfirmed request only explicitly, with the identical UUID and target. Inspect
+`GET /api/v1/agents/:id/email` for `addressChange`; do not start another address mutation while the
+previous one is unresolved. `pending`, `fenced`, `applying`, `native_applied`, and `projected` are
+not completion. `uncertain` and `rejected` require review; `cancelled` is not a successful change.
+Only `completed` confirms the new routing. Readiness is reported separately by `mailStatus`.
+
+| Plan              | Emails a month (sent + received) | API keys | Active aliases |
+| ----------------- | -------------------------------: | -------: | -------------: |
+| Free (`included`) |                            3,000 |        1 |              0 |
+| Plus              |                           25,000 |        5 |              5 |
+| Pro               |                           50,000 |       10 |             10 |
+| Max               |                          100,000 |       20 |             15 |
+| Enterprise        |          150,000 up to 5,000,000 |       25 |             20 |
+
+Plans apply to the whole account, and each identity in the account gets these limits. Plans are
+bought and changed from the dashboard or the [pricing page](https://opensignet.com/pricing), by card
+through Stripe or in USDC on Base. Current prices are on the pricing page.
+
+## Send mail
+
+```http
+POST /api/v1/agents/:id/email/send
+```
+
+```json
+{
+  "to": "operator@example.com",
+  "fromAddress": "billing@example.com",
+  "subject": "Service online",
+  "text": "The identity is ready."
+}
+```
+
+`fromAddress` is optional and must be the active primary address or an active alias. A successful
+request returns a queued status. Every recipient counts once against the combined monthly sent and
+received allowance.
+
+Send `Idempotency-Key` when a client may retry. Keys remain valid for 24 hours and are bound to the
+normalized request. A key reused with different content returns `409 IDEMPOTENCY_KEY_REUSED`.
+
+The send endpoint is limited to 12 requests per second. Quota and rate failures return `429` with a
+stable error code; rate-limited responses include `Retry-After`.
+
+## Batch send
+
+```http
+POST /api/v1/agents/:id/email/batch
+```
+
+A batch accepts up to 100 message objects and supports the same 24-hour idempotency contract.
+`validationMode: "strict"` rejects the whole batch when an item is invalid. `"partial"` reports
+invalid items and accepts eligible recipients. Treat the returned per-recipient results as the
+source of truth.
+
+## Usage
+
+```http
+GET /api/v1/agents/:id/email/usage
+```
+
+The response reports the current plan, monthly limit, sent, received, reserved, used, remaining,
+and cycle dates. Check it before large sends, but still handle concurrent `429` responses.
+
+## Signed inbound webhook
+
+```http
+GET   /api/v1/agents/:id/email/webhook
+PUT   /api/v1/agents/:id/email/webhook
+PATCH /api/v1/agents/:id/email/webhook
+```
+
+`PUT` configures an HTTPS endpoint and can return its signing value once. `PATCH` rotates that
+value. Store it in the receiving application's secret store and verify the event identifier,
+timestamp, and HMAC-SHA256 signature before accepting a delivery.
+
+`metadata` payloads contain message metadata and an authenticated content URL. `inline_text` can
+include plain text up to 256 KiB. Webhook delivery status and supported replay actions are exposed
+through the identity's webhook endpoints.
+
+## Blocklist
+
+```http
+GET    /api/v1/agents/:id/email/blocklist
+POST   /api/v1/agents/:id/email/blocklist
+DELETE /api/v1/agents/:id/email/blocklist/:blockId
+```
+
+Entries can match one normalized email address or an entire domain and apply to inbound senders and
+outbound recipients.
+
+## Successful responses
+
+| Operation                   | Success | Required outer fields                                               |
+| --------------------------- | ------- | ------------------------------------------------------------------- |
+| Inbox GET                   | `200`   | `inbox`, `addresses`, `limits`, `messages`                          |
+| Message DELETE              | `200`   | `deleted`, `messageId`                                              |
+| Primary address PATCH       | `200`   | `inbox`, `addresses`, `message`                                     |
+| Alias POST                  | `201`   | `address`, `addresses`                                              |
+| Alias DELETE                | `200`   | `deleted`, `addresses`                                              |
+| Send POST, normal enqueue   | `201`   | `id`, `status`, `messages`                                          |
+| Send POST, partial enqueue  | `202`   | `id`, `status`, `code`, `messages`, `usage`                         |
+| Batch POST, normal enqueue  | `202`   | `batchId`, `status`, `jobs`, `errors`                               |
+| Batch POST, partial enqueue | `202`   | `code`, `message`, `jobs`, `usage`                                  |
+| Usage GET                   | `200`   | Plan/cycle/counter fields, `used`, `remaining`, `requestsPerSecond` |
+| Webhook GET                 | `200`   | `webhook`, which can be `null`                                      |
+| Webhook PUT, update         | `200`   | `webhook`                                                           |
+| Webhook PUT, creation       | `201`   | `webhook`, `signingSecret`                                          |
+| Webhook PATCH, rotation     | `200`   | `webhook`, `signingSecret`                                          |
+| Blocklist GET               | `200`   | `entries`                                                           |
+| Blocklist POST              | `201`   | `entry`                                                             |
+| Blocklist DELETE            | `200`   | `ok`                                                                |
+
+`EMAIL_PARTIALLY_QUEUED` and `BATCH_PARTIALLY_QUEUED` identify accepted subsets.
+A partial batch response does not promise `batchId`, `status` or `errors` fields;
+inspect its actual variant and returned jobs. Optional `queueDeferred` can appear
+on normal queued responses. None of these statuses establishes final delivery.
+
+Do not resend the entire request with a new idempotency key after partial or
+uncertain acceptance. Keep the original key and reconcile its returned items.
+The `signingSecret` from webhook creation or rotation is sensitive: retain it
+only in the receiving application's protected storage, never model context,
+public source, analytics or logs. It is not returned again on an ordinary update.

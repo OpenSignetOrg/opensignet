@@ -1,0 +1,177 @@
+---
+/**
+ * One compact button for the colour theme. The default is Auto, which follows the system setting.
+ * Clicks move from what the person sees now: from Auto the first click shows the opposite of the
+ * system theme, the next the system theme itself, the next returns to Auto (Auto showing light:
+ * Dark → Light → Auto; Auto showing dark: Light → Dark → Auto). It keeps Starlight's storage key and
+ * values ('dark', 'light', '' for Auto), so Starlight's early script still applies the saved theme
+ * before the page paints.
+ */
+---
+
+<os-theme-toggle>
+  <button type="button" class="theme-toggle" data-choice="auto" aria-label="Change theme">
+    <svg class="icon auto" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 8a2.83 2.83 0 0 0 4 4 4 4 0 1 1-4-4"></path>
+      <path d="M12 2v2"></path>
+      <path d="M12 20v2"></path>
+      <path d="m4.9 4.9 1.4 1.4"></path>
+      <path d="m17.7 17.7 1.4 1.4"></path>
+      <path d="M2 12h2"></path>
+      <path d="M20 12h2"></path>
+      <path d="m6.3 17.7-1.4 1.4"></path>
+      <path d="m19.1 4.9-1.4 1.4"></path>
+    </svg>
+    <svg class="icon dark" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+    </svg>
+    <svg class="icon light" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="4"></circle>
+      <path d="M12 2v2"></path>
+      <path d="M12 20v2"></path>
+      <path d="m4.93 4.93 1.41 1.41"></path>
+      <path d="m17.66 17.66 1.41 1.41"></path>
+      <path d="M2 12h2"></path>
+      <path d="M20 12h2"></path>
+      <path d="m6.34 17.66-1.41 1.41"></path>
+      <path d="m19.07 4.93-1.41 1.41"></path>
+    </svg>
+  </button>
+</os-theme-toggle>
+
+{/* Shows the saved choice's icon before first paint. */}
+<script is:inline>
+  (() => {
+    const stored = localStorage.getItem('starlight-theme');
+    const choice = stored === 'dark' || stored === 'light' ? stored : 'auto';
+    document.querySelectorAll('os-theme-toggle .theme-toggle').forEach((button) => {
+      button.setAttribute('data-choice', choice);
+    });
+  })();
+</script>
+
+<script>
+  type Choice = 'auto' | 'dark' | 'light';
+
+  const STORAGE_KEY = 'starlight-theme';
+  const LABEL: Record<Choice, string> = { auto: 'Auto', dark: 'Dark', light: 'Light' };
+
+  const readChoice = (): Choice => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      return stored === 'dark' || stored === 'light' ? stored : 'auto';
+    } catch {
+      return 'auto';
+    }
+  };
+
+  const systemScheme = (): 'dark' | 'light' =>
+    matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+
+  /** Auto → the opposite of the system theme → the system theme → Auto. */
+  function nextChoice(choice: Choice): Choice {
+    const system = systemScheme();
+    const opposite = system === 'light' ? 'dark' : 'light';
+    if (choice === 'auto') return opposite;
+    return choice === opposite ? system : 'auto';
+  }
+
+  function apply(choice: Choice, store: boolean): void {
+    document.documentElement.dataset.theme = choice === 'auto' ? systemScheme() : choice;
+    if (store) {
+      try {
+        localStorage.setItem(STORAGE_KEY, choice === 'auto' ? '' : choice);
+      } catch {
+        // Private browsing can block storage; the theme still applies for this page.
+      }
+    }
+    document.querySelectorAll<HTMLButtonElement>('os-theme-toggle .theme-toggle').forEach((button) => {
+      button.dataset.choice = choice;
+      const text = `Theme: ${LABEL[choice]}. Switch to ${LABEL[nextChoice(choice)]}`;
+      button.setAttribute('aria-label', text);
+      button.title = text;
+    });
+  }
+
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+    // The next step depends on the system theme, so labels refresh whatever the choice.
+    apply(readChoice(), false);
+  });
+
+  class ThemeToggle extends HTMLElement {
+    connectedCallback() {
+      apply(readChoice(), false);
+      this.querySelector('button')?.addEventListener('click', () => {
+        apply(nextChoice(readChoice()), true);
+      });
+    }
+  }
+
+  if (!customElements.get('os-theme-toggle')) customElements.define('os-theme-toggle', ThemeToggle);
+</script>
+
+<style>
+  os-theme-toggle {
+    display: inline-flex;
+  }
+
+  .theme-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 1px solid var(--sl-color-hairline-light);
+    border-radius: 0.625rem;
+    background: transparent;
+    color: var(--sl-color-gray-2);
+    cursor: pointer;
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease,
+      color 150ms ease;
+  }
+
+  .theme-toggle:hover {
+    background-color: var(--sl-color-accent-low);
+    border-color: var(--os-orange-soft);
+    color: var(--sl-color-white);
+  }
+
+  .theme-toggle:focus-visible {
+    outline: 2px solid var(--sl-color-white);
+    outline-offset: 2px;
+  }
+
+  .icon {
+    position: absolute;
+    width: 1.125rem;
+    height: 1.125rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0;
+    transform: rotate(-30deg) scale(0.8);
+    transition:
+      opacity 180ms ease,
+      transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .theme-toggle[data-choice='auto'] .auto,
+  .theme-toggle[data-choice='dark'] .dark,
+  .theme-toggle[data-choice='light'] .light {
+    opacity: 1;
+    transform: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .theme-toggle,
+    .icon {
+      transition: none;
+    }
+  }
+</style>

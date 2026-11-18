@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.astro/
+.turbo/
+.wrangler/
+*.tsbuildinfo
+
+# Generated from the repository brand/ directory by scripts/sync-brand.ts; never edit or commit.
+/public/brand/
+/src/assets/brand/

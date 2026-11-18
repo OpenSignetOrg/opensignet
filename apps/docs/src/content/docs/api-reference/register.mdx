@@ -1,0 +1,350 @@
+---
+title: Registration API
+description: Quote and register an identity bundle through the public x402-protected API.
+---
+
+## Quote
+
+```http
+GET /api/v1/agents/quote
+```
+
+```text title="Query string"
+?preferredName=research-agent&tld=com&registerBasename=false&registerEns=false&years=1
+```
+
+The response itemizes the domain, optional onchain names, included services, and total USDC
+amount. This display quote is not a reservation. Request a fresh quote
+before starting checkout; the registration `402` supplies the sealed terms for that request.
+Do not reprice a challenged request or start another payment to resolve an uncertain submission.
+
+Quote requests require only `preferredName`; an omitted `tld` defaults to `xyz`.
+HTTP `200` returns the pricing object directly, not a wrapper. Monetary amounts
+such as `totalUsdc` are decimal strings. This differs from the registration POST,
+where `tld` is required.
+
+## Register
+
+```http
+POST /api/v1/agents/register
+```
+
+```json
+{
+  "wallet": "0x1111111111111111111111111111111111111111",
+  "ownerAddress": "0x1111111111111111111111111111111111111111",
+  "preferredName": "research-agent",
+  "tld": "com",
+  "registerBasename": true,
+  "basenameLabel": "research-agent-ai",
+  "registerEns": false,
+  "emailUsername": "hello",
+  "years": 1,
+  "autoRenew": false
+}
+```
+
+New clients should send `Prefer: respond-async`. The first request can return an x402 v2
+challenge. Submit the exact challenged request with the signed `PAYMENT-SIGNATURE` header once.
+Successful settlement details are returned in `PAYMENT-RESPONSE`. A lost response or uncertain
+payment outcome is not permission to submit another payment.
+
+### Sealed checkout challenge
+
+The initial HTTP `402` includes these fields in `accepts[0].extra`:
+
+| Field               | Contract                                                                                       |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| `registrationQuote` | Opaque string. Preserve it exactly; do not decode it into a quote object or reconstruct it.    |
+| `quoteExpiresAt`    | ISO timestamp for the sealed quote's expiry.                                                   |
+| `requestBinding`    | Issued request binding used as the nonce for the request-bound EIP-3009 payment authorization. |
+
+The x402 payment payload must echo the entire selected requirement as `accepted` unchanged,
+including all `extra` fields, not only the three listed above. Submit the exact challenged request
+body. Do not recalculate its price, drop metadata, or replace the sealed quote with a display quote.
+
+The SDK creates one bound EIP-3009 payment signature after validating the exact Base-mainnet
+USDC asset, recipient, EIP-712 domain, amount, timeout, and request binding. It also validates
+`quoteExpiresAt` when present and limits the authorization expiry accordingly. Wallet authentication
+may still need a separate signature. A quote expiring after submission is not proof of nonpayment;
+recover that attempt instead of automatically signing a replacement.
+
+### Explicit rejection before settlement
+
+For a submitted paid request, only an explicit HTTP `4xx` response other than `408` satisfying
+the public rejection schema, including both of these fields, conclusively reports rejection
+before settlement was attempted for that submission:
+
+```json
+{
+  "paymentSubmission": {
+    "status": "rejected",
+    "settlementAttempted": false
+  }
+}
+```
+
+Use `registrationPaymentRejectionSchema` from `@opensignet/shared` to validate the public
+payload and optional matching `error` alias, together with the HTTP status restriction.
+Do not reject an otherwise valid contract merely because it includes a top-level `error` field.
+The SDK surfaces a confirmed rejection as `RegistrationPaymentRejectedError` with
+`code: 'REGISTRATION_PAYMENT_REJECTED'`, `serverCode`, `message`, `handle`, and
+`settlementAttempted: false`.
+
+Do not infer this outcome from an HTTP error code, message text, an expired quote, a missing
+registration, or either marker field alone. The marker is not payment success and does not
+resolve an earlier ambiguous attempt. HTTP `408`, `5xx`, timeouts, network failures, lost
+responses, and unconfirmed conflicts remain `RegistrationPendingError` recovery cases. A `408`
+or `5xx` response cannot become a conclusive rejection merely by including the marker. Neither
+error authorizes automatic resending, repricing, or a new signature. Even another `402` after
+the paid POST is not, by itself, permission to replace the payment; reconcile the submitted
+attempt first.
+
+A declined request does not revoke its signed authorization. The API may keep an attempt
+pending while checking authorization expiry and finalized chain state. During these checks,
+status reports `PAYMENT_AUTHORIZATION_CHECK_PENDING`, not payment confirmation or permission
+to pay again. Verified non-payment is tied to the exact `paymentReference`; a later verified
+settlement takes precedence. Checks requiring operator review report
+`PAYMENT_AUTHORIZATION_REVIEW_REQUIRED` without discarding the original attempt.
+
+## Fields
+
+| Field              | Required | Notes                                                       |
+| ------------------ | -------- | ----------------------------------------------------------- |
+| `wallet`           | yes      | Wallet authorizing payment                                  |
+| `ownerAddress`     | no       | Final owner; defaults to `wallet`                           |
+| `preferredName`    | yes      | Requested domain label                                      |
+| `tld`              | yes      | `.com`, `.xyz`, `.ai`, `.org`, `.io`, `.net`, `.co`, `.app` |
+| `registerBasename` | no       | Defaults to `false`; set `true` to add a Basename           |
+| `registerEns`      | no       | Defaults to `false`; set `true` to add an ENS name          |
+| `emailUsername`    | no       | Primary address local-part; defaults to `hello`             |
+| `years`            | no       | Initial term from 1 through 10 years                        |
+| `autoRenew`        | no       | Records intent; owner still authorizes the vault onchain    |
+
+Email, managed DNS, and AgentID NFT orchestration are part of the identity bundle. Optional
+onchain names are charged only when selected.
+
+A registration names no plan. Plans apply to the whole account and are bought or changed only
+from the dashboard or the [pricing page](https://opensignet.com/pricing), by card or in USDC on
+Base.
+
+## Acceptance and completion
+
+HTTP `202` means payment was accepted and work is still processing. Its minimum body is:
+
+```json
+{
+  "registrationId": "11111111-1111-4111-8111-111111111111",
+  "status": "processing",
+  "statusUrl": "/api/v1/registrations/11111111-1111-4111-8111-111111111111",
+  "domain": "research-agent.com",
+  "paymentStatus": "settled",
+  "pollAfterSeconds": 5
+}
+```
+
+The response may include the full progress fields below. Keep the handle and poll status using
+the payer's authentication. Never treat `202` as a completed `RegistrationResult`.
+An existing registration requiring review may instead return `202` with a minimal
+`action_required` handle. Keep that handle and read status; this does not authorize another payment.
+
+HTTP `200` on the registration POST retains the existing `RegistrationResult` shape, including
+the existing transaction, metadata, and renewal fields. For example:
+
+```json
+{
+  "registrationId": "registration-reference",
+  "agentId": "agent-reference",
+  "nftTokenId": 42,
+  "domain": "research-agent.com",
+  "basename": "research-agent-ai.base.eth",
+  "ensName": null,
+  "metadataUri": "ipfs://bafy...",
+  "provisioningStatus": "processing"
+}
+```
+
+Legacy inline requests can still return `202` when unfinished. A legacy `200` result whose
+`provisioningStatus` is `processing` is not proof that all services are ready.
+
+## Payer-scoped status reads
+
+```http
+GET /api/v1/registrations/{registrationId}
+GET /api/v1/registrations?limit=20&offset=0
+```
+
+Authenticate with the payer's signed-in web session cookie, or:
+
+```text title="Request header"
+X-Agent-Signature: v2:<payerAddress>:<timestampMs>:<nonce>:<signature>
+```
+
+The signature is bound to this exact request and can be used once. See
+[wallet request signatures](/api-reference/overview/#wallet-request-signatures) for the signed
+message. Sign each status read and each registration POST separately, including the paid
+retry. A different designated NFT owner,
+agent-scoped API key alone, payment signature, payment identifier, or transaction hash does not
+authorize these reads. Missing authentication returns `401`; another payer's registration and an
+unknown ID both return `404`. Browser sessions must use the same API host for sign-in and reads.
+Both reads accept an optional `expectedPayer` wallet query parameter. The API authenticates first,
+then rejects a mismatch with `401`; the query is not authentication or delegation. Successful reads
+expose `X-Authenticated-Wallet`. Clients should bind requests to the intended payer and verify this
+header, especially when a web session and a wallet signer could belong to different wallets.
+
+Status GET returns HTTP `200` with `RegistrationProgress`. List GET returns
+`{ items: RegistrationProgress[], hasMore: boolean, total: number }`, scoped to the authenticated
+payer before pagination. The default page size is 20, with a maximum of 50. These are private,
+non-cacheable reads; polling does not start or restart a purchase.
+
+| Field                                   | Contract                                                                                                        |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `registrationId`, `statusUrl`, `domain` | Stable registration handle and requested domain                                                                 |
+| `status`                                | `processing`, `completed`, `action_required`, `failed`, `refunded`, `awaiting_payment`                          |
+| `agentId`                               | The identity record ID, or `null`; its presence alone does not mean completion                                  |
+| `paymentStatus`                         | `unknown`, `pending`, `settled`, `not_charged`, `refunded`                                                      |
+| `paymentReference`                      | Optional non-secret bytes32 request binding on verified terminal payment rejection; not authentication          |
+| `stage`                                 | `payment`, `domain`, `dns`, `email`, `basename`, `ens`, `mint`, `finalizing`, `complete`                        |
+| `messageCode`                           | Public machine-readable message code, not a raw diagnostic                                                      |
+| `startedAt`, `updatedAt`                | ISO timestamps                                                                                                  |
+| `completedAt`                           | ISO completion timestamp, or `null`                                                                             |
+| `revision`                              | Nonnegative status revision                                                                                     |
+| `estimatedDurationSeconds`              | Estimate in seconds, or `null` when unavailable                                                                 |
+| `pollAfterSeconds`                      | Suggested polling interval; normally 5 during processing and 30 when action is required                         |
+| `completionEventId`                     | Completion event identifier, or `null`; can deduplicate notifications                                           |
+| `result`                                | Optional public `RegistrationResult`, populated only on `completed`; may be missing or `null` for older records |
+
+`completed` means the identity and all selected services are ready, including DNS, email, and
+selected onchain names. Payment settlement, minting, or an agent ID alone is insufficient.
+There is no instant completion guarantee. Stop automatic waiting on `action_required`, `failed`,
+`refunded`, or `awaiting_payment` and inspect the state; none automatically authorizes repayment.
+
+Show confirmed payment as soon as the acceptance response reports `paymentStatus: settled`,
+then show the current `stage` independently of the progress message. A stage is not a checklist
+of services already completed; only authoritative `completed` status establishes total completion.
+The historical duration estimate is indicative, not an exact finish time or countdown. When
+`estimatedDurationSeconds` is `null`, no estimate is available; do not substitute a fixed duration.
+Registration continues independently of the browser. After returning, authenticate as the payer
+and read status again. Saved popup and dashboard notices use the separate contract below;
+a notice is not evidence of payment or service readiness.
+
+## Registration notices
+
+These public HTTP endpoints manage payer-scoped popup and dashboard notices. Authenticate every
+request with the payer's web session or `X-Agent-Signature` as described above. Every notice
+request, including mutations, **requires** `expectedPayer` in the query. It is an identity check,
+not authentication. Verify the successful response's `X-Authenticated-Wallet` against that payer
+before using the response; reject a missing or mismatched header. An agent API key, payment
+signature, or knowledge of a notice/registration ID is not notice authorization.
+
+### List notices
+
+```http
+GET /api/v1/registration-notices?expectedPayer={payerAddress}&channel=popup&limit=20
+```
+
+Use `channel=popup` or `channel=dashboard`. To continue, pass the returned opaque cursor as the
+optional `cursor` query parameter using URL query encoding. The response is
+`{ items: RegistrationNotice[], nextCursor: string | null }`; `null` ends pagination.
+
+| Item field       | Contract                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------- |
+| `noticeId`       | Notice identifier; preserve it and URL-encode it when dismissing.                                             |
+| `source`         | `client` or `registration`.                                                                                   |
+| `registrationId` | Registration ID, or `null` when not yet known.                                                                |
+| `domain`         | Domain, or `null` when unavailable.                                                                           |
+| `channel`        | `popup` or `dashboard`.                                                                                       |
+| `createdAt`      | Original creation time as an ISO timestamp.                                                                   |
+| `expiresAt`      | Channel expiry as an ISO timestamp.                                                                           |
+| `status`         | `registration` or `submission_unknown`; this is a notice state, not registration progress or payment success. |
+| `statusUrl`      | Payer-bound registration status URL, or `null` when the registration ID is unknown.                           |
+
+### Record an uncertain submission
+
+```http
+PUT /api/v1/registration-notices?expectedPayer={payerAddress}
+Content-Type: application/json
+```
+
+```json
+{
+  "clientId": "1788900000000-11111111-1111-4111-8111-111111111111",
+  "domain": "research-agent.com"
+}
+```
+
+Create a `clientId` with a 13-digit Unix-millisecond timestamp, a hyphen, and a UUIDv4, for example
+`` `${Date.now()}-${crypto.randomUUID()}` ``. Retain that ID for the same submission. A
+`submission_unknown` notice preserves a recovery reminder; it does not prove payment occurred,
+start registration, or authorize another checkout.
+
+### Associate a known registration
+
+```http
+POST /api/v1/registration-notices?expectedPayer={payerAddress}
+Content-Type: application/json
+```
+
+```json
+{
+  "registrationId": "11111111-1111-4111-8111-111111111111",
+  "clientId": "1788900000000-11111111-1111-4111-8111-111111111111"
+}
+```
+
+`clientId` is optional; provide the saved submission ID when associating its notice with a known
+registration. The PUT and POST responses contain `{ items: RegistrationNotice[] }`. Read the
+registration's authenticated status to establish payment and readiness; creating a notice does
+not establish either.
+
+### Dismissal and expiry
+
+```http
+DELETE /api/v1/registration-notices/{encodedNoticeId}?expectedPayer={payerAddress}&channel=popup
+```
+
+Set the path segment to `encodeURIComponent(noticeId)` and choose `popup` or `dashboard`.
+Dismissal closes only that channel's notice. It does not cancel registration work, stop or refund
+payment, dismiss the other channel, or authorize another payment.
+
+Successful dismissal is HTTP `204` with no body. Do not call a JSON decoder for
+that response. It still includes `X-Authenticated-Wallet`, which must match the
+intended payer.
+
+Cookie-authenticated notice mutations require the trusted same-origin browser
+flow. Missing or foreign `Origin` is rejected for cookie-authenticated writes;
+server-side signature requests without an `Origin` are distinct from that flow.
+Never remove or forge a browser origin as an authorization workaround.
+
+Popup notices expire after **5 days** and dashboard notices after **10 days**, measured from
+original creation, not the latest update or dismissal. Expiry removes them from active notice
+reads; physical cleanup occurs on the next successful scheduled cleanup. This is not an
+immediate physical-deletion deadline, backup-deletion guarantee, or secure-erasure promise.
+Retain separate recovery handles when an outcome is still uncertain: notice expiry is not a
+registration cancellation or proof that no payment occurred.
+
+## Lost responses and upgrades
+
+### Success status matrix
+
+| Operation                    | Success      | Body                                                                         |
+| ---------------------------- | ------------ | ---------------------------------------------------------------------------- |
+| Quote GET                    | `200`        | Pricing object                                                               |
+| Registration POST            | `200`, `202` | Result or processing/action-required/refunded handle; read the actual status |
+| Registration detail/list GET | `200`        | Progress object or `{ items, total, hasMore }`                               |
+| Notice GET                   | `200`        | `{ items, nextCursor }`                                                      |
+| Notice PUT/POST              | `200`        | `{ items }`                                                                  |
+| Notice DELETE                | `204`        | No body                                                                      |
+
+A `202` recovery handle can report `refunded`; do not constrain all such
+responses to `processing`, settled payment or completed service readiness.
+
+If the submission response is lost, authenticate as the payer and read the registration list.
+Match the exact domain and submission time interval; do not guess if multiple attempts match.
+A missing match does not prove no charge occurred. Keep known registration/payment references
+for support, but never use them instead of wallet authentication.
+
+The asynchronous methods are documented in the [TypeScript guide](/sdk/typescript/). Never treat
+`202` as a completed result. Integrate this HTTP contract directly or use the SDK for the
+payer-authenticated waiter, recovery methods, and single bound payment signature. A client upgrade does not change service
+readiness or authorize another payment.

@@ -1,0 +1,80 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'Page not found',
+    description: 'The requested OpenSignet documentation page does not exist or has moved.',
+    editUrl: false,
+    pagefind: false,
+    template: 'splash',
+  }}
+  hasSidebar={false}
+>
+  <main class="not-found">
+    <p class="status">404</p>
+    <h2>This page does not exist</h2>
+    <p>Check the address, search the docs, or start from one of these pages.</p>
+    <nav aria-label="Helpful pages">
+      <a class="primary" href="/">Overview</a>
+      <a href="/quickstart/">Quickstart</a>
+      <a href="/api-reference/overview/">API reference</a>
+    </nav>
+  </main>
+</StarlightPage>
+
+<style>
+  .not-found {
+    max-width: 40rem;
+    margin: clamp(3rem, 10vh, 7rem) auto;
+    text-align: center;
+  }
+
+  .status {
+    margin: 0;
+    color: var(--os-orange);
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+
+  h2 {
+    margin: 0.5rem 0 0;
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    letter-spacing: -0.02em;
+  }
+
+  .not-found > p:last-of-type {
+    color: var(--sl-color-gray-2);
+    font-size: 1.05rem;
+  }
+
+  nav {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 2rem;
+  }
+
+  a {
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.625rem;
+    padding: 0.65rem 1rem;
+    color: var(--sl-color-text-accent);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  a:hover,
+  a:focus-visible {
+    border-color: var(--sl-color-accent);
+  }
+
+  a.primary {
+    border-color: var(--sl-color-accent);
+    background: var(--sl-color-accent);
+    color: var(--sl-color-black);
+  }
+</style>

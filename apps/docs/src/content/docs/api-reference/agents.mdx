@@ -1,0 +1,41 @@
+---
+title: Identities API
+description: List the identities your wallet holds and read one of your identities by ID.
+---
+
+Identity data is private. There is no public registry, search or lookup of someone else's
+identity; every read below is limited to the identities the caller owns.
+
+## Look up by wallet
+
+```http
+GET /api/v1/agents/by-wallet/:wallet
+```
+
+The wallet must be a valid EVM address. A wallet can hold more than one identity, so handle an
+array response rather than assuming a single record.
+
+The caller must be authenticated as that wallet: a wallet request signature from it, or a
+signed-in session of the account that holds it. Another wallet is rejected, and an API key scoped
+to one identity is rejected with `403` because it cannot list a wallet's identities.
+
+## Get by ID
+
+```http
+GET /api/v1/agents/:id
+```
+
+This endpoint is authenticated; there is no anonymous lookup of an identity. An API key scoped to the
+identity can read it, and so can a signed-in session of the account that owns it. HTTP `200`
+returns the identity record. A missing identity, or one the caller cannot access, returns `404`;
+missing authentication returns `401`.
+
+## SDK
+
+```ts
+const held = await openSignet.getAgentsByWallet(walletAddress);
+const identity = await openSignet.getAgentById(agentId);
+```
+
+See [authentication](/api-reference/overview/#authentication) for how an account owns an identity
+before calling protected endpoints.

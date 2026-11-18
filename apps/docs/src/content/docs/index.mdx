@@ -1,0 +1,62 @@
+---
+title: Overview
+head:
+  - tag: title
+    content: OpenSignet Docs
+  - tag: meta
+    attrs:
+      property: og:title
+      content: OpenSignet Docs
+description: OpenSignet is the agent-native identity and communications infrastructure. Start with the API, TypeScript SDK, MCP server and framework integrations.
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+OpenSignet is the agent-native identity and communications infrastructure.
+
+Developers can integrate directly through APIs and SDKs, people can guide agents, and autonomous
+workflows can operate within configured permissions. Domains, DNS, email, optional onchain names,
+and AgentID support that foundation. Registration is quoted and paid in USDC on Base through x402.
+
+People sign in with Google, an email code or a wallet, and manage every identity their account owns
+from one place. Plans apply to the whole account. See [core concepts](/concepts/#accounts).
+
+The public packages are prepared at version 0.1.0 and are not yet published to npm or PyPI;
+until they are, the guides' source-checkout instructions apply.
+
+<CardGrid>
+  <Card title="Register an identity" icon="rocket">
+    Start with the [quickstart](/quickstart/) or review the [registration
+    API](/api-reference/register/).
+  </Card>
+  <Card title="Integrate the SDK" icon="seti:typescript">
+    Use the public [TypeScript SDK](/sdk/typescript/) for quotes, x402 checkout, DNS, email, and
+    renewals.
+  </Card>
+  <Card title="Connect an MCP client" icon="puzzle">
+    Run the public [MCP server](/sdk/mcp/) or use a supported framework integration.
+  </Card>
+  <Card title="Call the API" icon="open-book">
+    Read the [API contract](/api-reference/overview/) for authentication, errors, retries, and
+    endpoint discovery.
+  </Card>
+</CardGrid>
+
+## Public entry points
+
+| Surface       | URL                                                                                |
+| ------------- | ---------------------------------------------------------------------------------- |
+| Application   | [opensignet.com](https://opensignet.com)                                           |
+| API           | `https://api.opensignet.com/api/v1`                                                |
+| Documentation | [docs.opensignet.com](https://docs.opensignet.com)                                 |
+| Source        | [github.com/OpenSignetOrg/opensignet](https://github.com/OpenSignetOrg/opensignet) |
+
+## Choose a path
+
+- Building an application or service: [TypeScript SDK](/sdk/typescript/)
+- Connecting an LLM client: [MCP server](/sdk/mcp/)
+- Managing records safely: [DNS guide](/guides/dns/)
+- Sending or receiving messages: [Email guide](/guides/email/)
+- Keeping identities active: [Renewal guide](/guides/renewal/)
+
+These guides describe the supported public APIs, SDKs, and integration contracts.

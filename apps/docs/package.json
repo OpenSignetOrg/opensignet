@@ -1,0 +1,51 @@
+{
+  "name": "@opensignet/docs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Public product, API, and integration documentation for OpenSignet.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenSignetOrg/opensignet.git",
+    "directory": "apps/docs"
+  },
+  "homepage": "https://docs.opensignet.com",
+  "type": "module",
+  "engines": {
+    "node": ">=22.23.4",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "build:dependencies": "pnpm --filter @opensignet/shared build",
+    "sync:brand": "node ../../scripts/sync-brand.ts docs",
+    "dev": "pnpm run build:dependencies && node ../../scripts/sync-brand.ts docs && astro dev",
+    "build": "pnpm run build:dependencies && node ../../scripts/sync-brand.ts docs && astro build && node ../../scripts/seo/indexnow.ts prepare-key --site=docs",
+    "build:cloudflare:production": "node ../../scripts/seo/indexnow.ts verify --site=docs --production && pnpm run check",
+    "preview": "pnpm run build && wrangler dev --env preview",
+    "deploy": "pnpm run check && node ../../scripts/seo/indexnow.ts verify --site=docs --production && wrangler deploy && node ../../scripts/seo/indexnow.ts submit --site=docs --production",
+    "lint": "node ../../scripts/sync-brand.ts docs && node scripts/validate-content.ts",
+    "typecheck": "pnpm run build:dependencies && node ../../scripts/sync-brand.ts docs && astro check",
+    "test": "pnpm run build:dependencies && node ../../scripts/sync-brand.ts docs && node --test \"test/*.test.ts\"",
+    "validate:content": "node ../../scripts/sync-brand.ts docs && node scripts/validate-content.ts",
+    "validate:output": "pnpm run build:dependencies && node scripts/validate-output.ts",
+    "check": "pnpm run validate:content && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run validate:output"
+  },
+  "dependencies": {
+    "@opensignet/shared": "workspace:*",
+    "@astrojs/sitemap": "3.7.4",
+    "@astrojs/starlight": "0.42.9",
+    "astro": "7.4.7",
+    "sharp": "0.35.5",
+    "smol-toml": "1.9.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "13.0.0",
+    "@astrojs/check": "0.9.10",
+    "@types/node": "^22.10.5",
+    "openapi-types": "12.1.3",
+    "typescript": "6.0.3",
+    "wrangler": "4.129.0"
+  }
+}

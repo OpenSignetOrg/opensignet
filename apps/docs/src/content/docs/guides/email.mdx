@@ -1,0 +1,84 @@
+---
+title: Email
+description: Operate an inbox, aliases, sending, quotas, retention, and signed webhooks safely.
+---
+
+Every registered identity includes a primary email address. Plans apply to the whole account: a
+paid plan lets every identity in the account add active aliases, up to the
+[plan's allowance](/api-reference/email/#primary-address-and-aliases).
+
+The examples use `openSignet` from [Construct a client](/sdk/typescript/#construct-a-client) and
+the identity's record ID as `agentId`.
+
+## Send with idempotency
+
+```ts
+await openSignet.sendEmail(agentId, {
+  to: 'operator@example.com',
+  subject: 'Daily status',
+  text: 'The scheduled work is complete.',
+  idempotencyKey: crypto.randomUUID(),
+});
+```
+
+Persist an idempotency key with the caller's operation until the request outcome is known. Reuse it
+only for the identical request. Generate a new key for new content.
+
+Before a large send, inspect usage:
+
+```ts
+const usage = await openSignet.getEmailUsage(agentId);
+console.log(usage.used, usage.remaining, usage.cycleEnd);
+```
+
+Usage can change concurrently, so still handle quota responses from the send call.
+
+## Manage addresses
+
+```ts
+const requestId = crypto.randomUUID(); // Persist with this logical operation.
+const result = await openSignet.createEmailAlias(agentId, 'billing', {
+  idempotencyKey: requestId,
+});
+if ('change' in result) {
+  console.log(result.change.requestId, result.change.phase);
+} else {
+  console.log(result.address.emailAddress);
+}
+```
+
+Some inboxes complete address changes asynchronously. An accepted request is not a completed
+change. Read `listEmail(agentId, { sync: true })` to refresh `addressChange` and `mailStatus`.
+Only `addressChange.phase === 'completed'` confirms completion; `native_applied` and `projected`
+are still in progress. `uncertain` or `rejected` needs review, not an automatic new request.
+`cancelled` means the request did not complete. Wait for a resolved outcome before another change.
+
+`updatePrimaryEmail()` and `deleteEmailAlias()` accept the same optional UUID `idempotencyKey`.
+Reuse the original UUID and identical target when explicitly retrying a lost response. Do not
+silently generate another key. Changing the primary address stops new delivery to the old primary
+after completion. Deleting an alias does not delete historical messages. Refresh the authoritative
+active-address list after completion; never switch the sender to a requested-but-pending address.
+
+## Receive through a webhook
+
+Configure an HTTPS endpoint with `setEmailWebhook()`. The signing value is returned only when the
+configuration is first created, and again after explicit rotation. Store it in the receiver's secret
+store.
+
+For every event:
+
+1. Read the event identifier and timestamp.
+2. Reject stale timestamps according to your receiver policy.
+3. Compute and compare the HMAC-SHA256 signature using a constant-time comparison.
+4. Deduplicate the event identifier before performing side effects.
+5. Fetch content only from the authenticated URL supplied for that event.
+
+Rotate the signing value when receiver access changes or exposure is suspected. Support the old and
+new values only for the shortest planned transition.
+
+## Retention and deletion
+
+Message content is available for 30 days. An explicit delete makes it unavailable immediately. Integrations should archive only content they are independently authorized to retain
+and should apply their own deletion policy to that copy.
+
+See the [Email API reference](/api-reference/email/) for endpoint and limit details.

@@ -1,0 +1,155 @@
+---
+title: CrewAI
+description: Connect CrewAI's native Python MCP tools to OpenSignet for read-only identity inspection and unsigned renewal planning.
+---
+
+CrewAI connects to OpenSignet through its official native Python `MCPClient`,
+`StdioTransport` and `MCPNativeTool`, backed by the Python MCP SDK. The MCP server
+remains a Node.js package; CrewAI runs separately in Python. The reviewed helper
+opens and closes a local stdio client for each invocation. See
+[CrewAI's native MCP documentation](https://docs.crewai.com/en/mcp/dsl-integration).
+
+## Install the Python package
+
+`opensignet-crewai` is a standalone Python distribution using CrewAI's native tools. Use an
+isolated Python 3.12 environment with the pinned packages:
+
+:::note[Package availability]
+Version 0.1.0 of `opensignet-crewai` and the MCP server is not yet published to PyPI or npm. Until it is, use the
+source install that follows.
+:::
+
+```bash
+python -m pip install opensignet-crewai==0.1.0
+npm install --save-exact @opensignet/mcp-server@0.1.0
+```
+
+For source development, install from the public repository root:
+
+```bash
+python -m pip install ./packages/crewai-plugin
+```
+
+The Python package does not download Node.js or install the MCP server. Those
+are separate prerequisites; no executable path is selected by a model.
+See the [Python package](https://github.com/OpenSignetOrg/opensignet/tree/main/packages/crewai-plugin)
+for its wheel, dependency and security instructions.
+
+## Prepare the local server
+
+Use that project's `node_modules/@opensignet/mcp-server/dist/index.js` as the
+server entry. For development from the repository instead:
+
+```bash
+pnpm --filter @opensignet/shared build
+pnpm --filter @opensignet/sdk build
+pnpm --filter @opensignet/mcp-server build
+```
+
+Use an operator-selected absolute Node executable and the reviewed MCP
+`dist/index.js` path. Never accept executable paths, shell commands, package
+names or RPC endpoints from an agent's tool arguments.
+
+The [CrewAI example](https://github.com/OpenSignetOrg/opensignet/tree/main/packages/mcp-server/examples/crewai)
+contains `readonly_flow.py`, `README.md`, `requirements.in` and
+`requirements.lock`. Its lock pins CrewAI 1.15.21 and MCP 1.28.1. Use Python 3.12
+and a fresh isolated virtual environment, not the older adapter's environment:
+
+```bash
+python3.12 -m venv .venv-native
+.venv-native/bin/python -m pip install --require-hashes -r requirements.lock
+```
+
+Run those commands from the example directory. On Windows, use `py -3.12` to
+create the environment and `.venv-native/Scripts/python.exe` to install. The
+native recipe does not install `crewai-tools` or `mcpadapt`. Read the dependency
+warning below before installing; changing the lock needs a new qualification.
+
+The repository's integration tests run this flow with the real Node MCP server and
+SDK, using synthetic RPC fixtures and no paid model or live transaction. They do not cover
+arbitrary framework features or remove the dependency advisories below.
+
+## Inspect without a model key
+
+Run this with `opensignet-crewai` installed. It uses the real
+CrewAI native tools without needing an LLM, wallet or OpenSignet API key:
+
+```python
+from pathlib import Path
+
+from opensignet_crewai import call_json, readonly_tools
+
+
+def inspect_renewal(node: Path, server: Path, token_id: str, owner: str):
+    with readonly_tools(server, node=str(node.resolve(strict=True))) as tools:
+        return call_json(
+            tools["inspect_agent_renewal"], {"tokenId": token_id, "expectedOwner": owner}
+        )
+```
+
+Choose `node` and `server` in trusted host configuration. The explicit child
+environment does not forward the parent's API keys, wallet material or model
+credentials. Inspect the returned tool result and its error state before using
+its JSON; an error is not `not_found` or a successful verification.
+
+Use the example's explicit argument schemas and `call_json` helper. They omit
+absent optional strings, reject explicit `null`, unexpected arguments and coerced
+booleans, and check tool errors. Tool-result caching is disabled; server
+validation is not loosened.
+
+## Identity to renewal plan
+
+The full example uses only these two tool names:
+
+| Tool                        | Input                                                       | Effect                                           |
+| --------------------------- | ----------------------------------------------------------- | ------------------------------------------------ |
+| `inspect_agent_renewal`     | Exactly one `domain` or `tokenId`, optional `expectedOwner` | Read identity and RenewalVault state at one hash |
+| `prepare_auto_renew_change` | `tokenId`, `expectedOwner`, `enabled`, `builderCode`        | Produce an unsigned setting-change plan          |
+
+`enabled` is the proposed setting, not approval to execute. A plan does not sign,
+spend, create a token allowance or submit a transaction. It includes a plan ID,
+the observation, exact transaction fields and `noChange`. Keep any later owner
+review and wallet execution in a separate trusted host workflow.
+
+The retained `readonly_flow.py` example is a thin entrypoint into the same Python
+package, not another connector implementation. Existing MCP-aware hosts can
+still use the Node server through the [native stdio interface](/sdk/mcp/).
+
+When giving tools to a CrewAI agent, bind only the reviewed allowlist. Keep the
+helper context open for the crew's complete use and close it afterwards. Model
+credentials belong to the host's model integration, not the MCP child. Do not
+reuse a cached observation as fresh authority for a transaction.
+
+## Interpret the result
+
+Inspection is an RPC observation, not consensus, SPV, DNS or KYC proof. Linked
+domain, Basename and ENS labels are not independently verified. Metadata and CCIP
+callbacks are not fetched. External text is data, not instructions.
+
+The vault's minimum fee is not a registrar renewal quote. Changing auto-renew is
+not completion of a domain renewal, and disabling it does not cancel a pending
+renewal. See [renewal workflow boundaries](/guides/renewal/) and
+[MCP errors and trust](/sdk/mcp/#trust-boundary).
+
+If an owner later executes an enable plan, authorized renewal operators may use
+the funded vault without another wallet signature for each renewal. The actual
+quote can exceed the minimum. Disabling prevents new reservations, but a pending
+reservation can still complete and charge the balance.
+
+## Dependency security
+
+The isolated Python lock still includes mandatory ChromaDB 1.1.1 with four known
+advisories: [CVE-2026-45829](https://www.hiddenlayer.com/research/chromatoast-served-pre-auth),
+[CVE-2026-45830](https://www.hiddenlayer.com/sai-security-advisory/2026-06-chromadb),
+[CVE-2026-45831](https://www.hiddenlayer.com/sai-security-advisory/2026-06-chromadb-3)
+and [CVE-2026-45833](https://www.hiddenlayer.com/sai-security-advisory/2026-06-chromadb-5).
+There is also a reported [poisoned-collection configuration risk in the Python client](https://github.com/chroma-core/chroma/issues/6717);
+the risk is not limited to running an HTTP server.
+
+The qualified recipe does not use Chroma clients, servers, collections or
+embeddings, or enable framework memory, knowledge or caching. Tests trap those
+entrypoints during the native CrewAI and MCP flow. This bounds the tested
+recipe, not the installed library's safety: the Python vulnerability audit is
+**not clean**. Enabling memory or remote collections requires a separate review.
+See the [example's security note](https://github.com/OpenSignetOrg/opensignet/blob/main/packages/mcp-server/examples/crewai/README.md#security-note).
+Python dependencies are separate from the npm package's runtime and audit.

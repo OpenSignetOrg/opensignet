@@ -1,0 +1,526 @@
+/*
+ * OpenSignet docs theme. It follows the main website: warm paper surfaces, near-black ink for
+ * emphasis and selection, the brand orange only as a small accent, and the Geist typeface.
+ * Starlight's blue and purple callouts are mapped to neutral ink and green; the brand has no blue.
+ */
+
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../assets/fonts/geist-latin-variable.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Dark theme: warm ink. */
+:root {
+  --os-orange: #f96510;
+  --os-orange-soft: rgba(249, 101, 16, 0.55);
+  --sl-font:
+    'Geist', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --sl-color-accent-low: #26261f;
+  --sl-color-accent: #e9e6dc;
+  --sl-color-accent-high: #f6f4ee;
+  --sl-color-white: #f6f4ee;
+  --sl-color-gray-1: #e4e1d6;
+  --sl-color-gray-2: #c4c1b6;
+  --sl-color-gray-3: #95938a;
+  --sl-color-gray-4: #64635c;
+  --sl-color-gray-5: #3b3b35;
+  --sl-color-gray-6: #22221d;
+  --sl-color-black: #161613;
+  --sl-color-blue-low: #26261f;
+  --sl-color-blue: #d6d3c8;
+  --sl-color-blue-high: #f1efe8;
+  --sl-color-purple-low: #1c3125;
+  --sl-color-purple: #6fc497;
+  --sl-color-purple-high: #c8ecd6;
+  --os-code-bg: #1c1c18;
+  --os-code-header: #24241f;
+}
+
+/* Light theme: warm paper, the main website's palette. */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #e7e3d6;
+  --sl-color-accent: #1f201d;
+  --sl-color-accent-high: #1f201d;
+  --sl-color-white: #1f201d;
+  --sl-color-gray-1: #2b2c28;
+  --sl-color-gray-2: #45463f;
+  --sl-color-gray-3: #66675e;
+  --sl-color-gray-4: #96968c;
+  --sl-color-gray-5: #c9c6ba;
+  --sl-color-gray-6: #e4e1d6;
+  --sl-color-gray-7: #efede5;
+  --sl-color-black: #f6f4ee;
+  --sl-color-blue-low: #ebe8de;
+  --sl-color-blue: #45463f;
+  --sl-color-blue-high: #1f201d;
+  --sl-color-purple-low: #e2eee6;
+  --sl-color-purple: #2f6b4a;
+  --sl-color-purple-high: #1d4530;
+  --sl-color-bg-nav: rgba(246, 244, 238, 0.86);
+  --os-code-bg: #fbfaf6;
+  --os-code-header: #f1efe8;
+}
+
+:root:not([data-theme='light']) {
+  --sl-color-bg-nav: rgba(22, 22, 19, 0.86);
+}
+
+html {
+  letter-spacing: 0;
+}
+
+body {
+  text-rendering: optimizeLegibility;
+  font-feature-settings:
+    'rlig' 1,
+    'calt' 1,
+    'ss01' 1;
+}
+
+/*
+ * Header and the phone "On this page" bar: frosted glass like the website's sticky header. Content
+ * scrolling underneath is blurred, never readable through it. Only the standard property is written:
+ * the build's minifier drops it when a -webkit- copy sits next to it, and Chrome ignores the prefix.
+ */
+header.header,
+mobile-starlight-toc nav {
+  backdrop-filter: blur(18px) saturate(1.4);
+}
+
+header.header {
+  border-bottom-color: var(--sl-color-hairline);
+}
+
+/*
+ * While the phone menu is open the header is solid like the menu below it. Chrome stops painting a
+ * blurred header's contents while a popover is open, which would hide the title and search.
+ */
+body:has(#starlight__sidebar:popover-open) header.header {
+  backdrop-filter: none;
+  background-color: var(--sl-color-black);
+}
+
+/* Phone header: search and menu are matching 40px buttons, clearly separated from the edge. */
+:root {
+  --sl-menu-button-size: 2.5rem;
+}
+
+.sl-menu-button {
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--sl-color-hairline-light);
+  border-radius: 0.625rem;
+  background-color: var(--sl-color-black);
+  color: var(--sl-color-white);
+  box-shadow: none;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.sl-menu-button svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.sl-menu-button:hover {
+  background-color: var(--sl-color-accent-low);
+  border-color: var(--os-orange-soft);
+}
+
+/* While the menu is open the button is a solid ink square with the close icon. */
+.sl-menu-button:has(~ :popover-open) {
+  background-color: var(--sl-color-white);
+  border-color: var(--sl-color-white);
+  color: var(--sl-color-black);
+}
+
+@media (max-width: 49.99rem) {
+  [data-has-sidebar] header.header {
+    padding-inline-end: calc(0.625rem + var(--sl-nav-pad-x) + var(--sl-menu-button-size));
+  }
+
+  site-search button[data-open-modal] {
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border: 1px solid var(--sl-color-hairline-light);
+    color: var(--sl-color-white);
+  }
+
+  site-search button[data-open-modal] svg {
+    width: 1.125rem;
+    height: 1.125rem;
+  }
+}
+
+.site-title {
+  gap: 0.625rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.site-title img {
+  height: 1.625rem;
+  width: auto;
+}
+
+/* Sidebar: calm groups, a solid ink pill for the current page. */
+.sidebar-content summary .group-label .large {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sl-color-gray-3);
+}
+
+.sidebar-content a {
+  border-radius: 0.5rem;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.sidebar-content a:not([aria-current='page']):hover {
+  background-color: var(--sl-color-accent-low);
+  color: var(--sl-color-white);
+}
+
+.sidebar-content a[aria-current='page'] {
+  font-weight: 600;
+  box-shadow: 0 6px 14px -8px rgba(20, 21, 18, 0.55);
+}
+
+/* Page content. */
+.sl-markdown-content :is(h1, h2, h3, h4) {
+  letter-spacing: -0.015em;
+}
+
+.sl-markdown-content :is(h2, h3) {
+  scroll-margin-top: 5.5rem;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--sl-color-white);
+  font-weight: 500;
+  text-decoration-line: underline;
+  text-decoration-color: var(--os-orange-soft);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.2em;
+  transition: text-decoration-color 150ms ease;
+}
+
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+  text-decoration-color: var(--os-orange);
+}
+
+.sl-markdown-content table {
+  display: table;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--sl-color-hairline-light);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.sl-markdown-content :is(th, td) {
+  border-bottom: 1px solid var(--sl-color-hairline-light);
+  padding: 0.75rem 1rem;
+  vertical-align: top;
+}
+
+/* Inside the bordered table every row keeps clear space from both edges. */
+.sl-markdown-content :is(th, td):first-child {
+  padding-inline-start: 1.25rem;
+}
+
+.sl-markdown-content :is(th, td):last-child {
+  padding-inline-end: 1.25rem;
+}
+
+.sl-markdown-content tr:last-child td {
+  border-bottom: 0;
+}
+
+.sl-markdown-content th {
+  background-color: var(--sl-color-gray-6);
+  font-weight: 600;
+}
+
+.sl-markdown-content code:not(:where(.expressive-code *)) {
+  border-radius: 0.375rem;
+  padding: 0.1em 0.375em;
+}
+
+/* Cards, link cards, callouts and code: the website's rounded, softly lifted surfaces. */
+.card,
+.sl-link-card {
+  border-radius: 0.875rem;
+  border-color: var(--sl-color-hairline-light);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 44px -34px rgba(20, 21, 18, 0.42);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.sl-link-card:hover {
+  border-color: var(--os-orange-soft);
+  box-shadow: 0 22px 48px -30px rgba(20, 21, 18, 0.5);
+}
+
+/* One calm icon style for every card instead of Starlight's rotating colours. */
+.card:nth-child(n) {
+  --sl-card-border: var(--sl-color-gray-5);
+  --sl-card-bg: var(--sl-color-gray-6);
+}
+
+.card .icon {
+  color: var(--sl-color-white);
+}
+
+.starlight-aside {
+  border-radius: 0.75rem;
+}
+
+/*
+ * Code cards: every block has the same header as the main website's code cards. An icon and a label
+ * on the left (the file name, or the language from src/expressive-code/code-headers.ts) and the copy
+ * button on the right, vertically centred in the header.
+ */
+.expressive-code {
+  --os-icon-code: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3Cpath d='m5 12-3 3 3 3'/%3E%3Cpath d='m9 18 3-3-3-3'/%3E%3C/svg%3E");
+  --os-icon-terminal: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='4 17 10 11 4 5'/%3E%3Cline x1='12' x2='20' y1='19' y2='19'/%3E%3C/svg%3E");
+}
+
+.expressive-code .frame:is(.has-title, .is-terminal) .header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  margin: 0;
+  padding: 0 3.5rem 0 1rem;
+  background: var(--os-code-header);
+  border: 1px solid var(--sl-color-hairline-light);
+  border-bottom: 0;
+  color: var(--sl-color-gray-3);
+  font-family: var(--__sl-font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.expressive-code .frame:is(.has-title, .is-terminal) .header::before {
+  content: '';
+  position: static;
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 0;
+  border-radius: 0;
+  background-color: currentColor;
+  opacity: 1;
+  -webkit-mask-image: var(--os-icon-code);
+  mask-image: var(--os-icon-code);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.expressive-code .frame.is-terminal .header::before {
+  -webkit-mask-image: var(--os-icon-terminal);
+  mask-image: var(--os-icon-terminal);
+}
+
+.expressive-code .frame:is(.has-title, .is-terminal) .header::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-bottom: 1px solid var(--sl-color-hairline-light);
+  pointer-events: none;
+}
+
+.expressive-code .frame .header .title {
+  position: static;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expressive-code .frame .header .title::after {
+  display: none;
+}
+
+.expressive-code .frame:is(.has-title, .is-terminal) .copy {
+  inset-block-start: 0.375rem;
+  inset-inline-end: 0.375rem;
+}
+
+/* The copy button sits in the header, so the first code line needs no extra room for it. */
+.expressive-code .frame:is(.has-title, .is-terminal) :nth-child(1 of .ec-line) .code {
+  padding-inline-end: var(--ec-codePadInl);
+}
+
+/* Copy button: always visible, a calm square that lifts on hover; never hidden until hover. */
+.expressive-code .frame .copy button {
+  opacity: 1;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+}
+
+.expressive-code .frame .copy button:hover {
+  --ec-frm-inlBtnFg: var(--sl-color-white);
+}
+
+.expressive-code .frame .copy button::before {
+  border-radius: 0.5rem;
+}
+
+.expressive-code .frame .copy .feedback {
+  border-radius: 0.5rem;
+  font-weight: 500;
+}
+
+.expressive-code + .expressive-code,
+.sl-markdown-content .expressive-code {
+  margin-block: 1.25rem;
+}
+
+/* Search: the header field and the dialog match the website's search. */
+site-search button[data-open-modal] {
+  border-radius: 0.625rem;
+  border-color: var(--sl-color-hairline-light);
+  background-color: var(--sl-color-black);
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+site-search button[data-open-modal]:hover {
+  border-color: var(--os-orange-soft);
+}
+
+site-search button[data-open-modal] kbd {
+  border-radius: 0.375rem;
+}
+
+site-search dialog {
+  border-radius: 1rem;
+  border: 1px solid var(--sl-color-hairline-light);
+  box-shadow:
+    0 0 0 1px rgba(20, 21, 18, 0.04),
+    0 44px 110px -42px rgba(20, 21, 18, 0.7),
+    0 14px 34px -20px rgba(20, 21, 18, 0.35);
+}
+
+site-search dialog::backdrop {
+  background: rgba(22, 23, 19, 0.5);
+  backdrop-filter: blur(6px);
+}
+
+site-search {
+  --pagefind-ui-primary: var(--sl-color-white);
+  --pagefind-ui-text: var(--sl-color-gray-2);
+  --pagefind-ui-border-radius: 0.75rem;
+  --pagefind-ui-border-width: 1px;
+  --pagefind-ui-font: var(--sl-font);
+}
+
+site-search .pagefind-ui__search-input {
+  caret-color: var(--os-orange);
+}
+
+site-search .pagefind-ui__result {
+  border-radius: 0.75rem;
+}
+
+site-search mark {
+  background: rgba(249, 101, 16, 0.14);
+  color: var(--sl-color-white);
+  box-shadow: inset 0 -1.5px 0 var(--os-orange-soft);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* Slim scrollbars without arrow buttons, like the website. */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 4px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: var(--sl-color-gray-5);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--sl-color-gray-4);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sl-color-gray-5) transparent;
+  }
+}
+
+site-search dialog {
+  background-color: var(--sl-color-black);
+}
+
+/* Keyboard focus uses the ink colour like the website, never a browser blue. */
+:focus-visible {
+  outline-color: var(--sl-color-white);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-content a,
+  .sl-menu-button,
+  .sl-link-card,
+  .sl-markdown-content a,
+  site-search button[data-open-modal] {
+    transition: none;
+  }
+}
+
+@media (max-width: 50rem) {
+  .sl-markdown-content table {
+    display: block;
+    overflow-x: auto;
+  }
+}

@@ -1,0 +1,86 @@
+---
+title: Core concepts
+description: Understand accounts, identity bundles, plans, ownership, Base payments, provisioning, and renewals.
+---
+
+## Accounts
+
+You sign in to [opensignet.com](https://opensignet.com) with Google, an email code or a wallet
+(EIP-4361). There is no separate sign-up, and each person has one account across these methods.
+A signed-in session belongs to the account, whichever method started it.
+
+Each account can set up its own self-custodial OpenSignet wallet, protected by passkeys. You can
+also link an outside wallet to the account.
+
+An account owns an identity when one of its wallets holds the identity's AgentID, or when the
+account registered it. Managing an identity (DNS, email, API keys and settings) uses the account
+session. Onchain vault actions are signed by the wallet that holds the AgentID.
+
+## Identity bundle
+
+An OpenSignet registration coordinates public internet and onchain identity into one owner-scoped
+record. Depending on the selected options, the bundle contains:
+
+- a registered internet domain;
+- managed DNS;
+- a primary email address;
+- an AgentID NFT;
+- an optional Basename on Base;
+- an optional ENS name on Ethereum.
+
+Basename and ENS are opt-in. The quote itemizes every selected component before payment.
+
+## What you pay
+
+A registration costs the domain at its registrar price, plus any Basename or ENS name you choose
+and the current network gas. There is no platform fee. Registration is paid in USDC on Base.
+
+Plans apply to the whole account. Every account starts on the Free plan (catalog key `included`),
+which includes a primary inbox for each identity. Plus, Pro, Max and Enterprise add email volume,
+API keys, DNS records and aliases for every identity in the account. Plans are
+bought from the dashboard or the [pricing page](https://opensignet.com/pricing), by card through
+Stripe or in USDC on Base, not during registration. See the
+[plan limits](/api-reference/email/#primary-address-and-aliases).
+
+## Owner and payer
+
+The wallet paying for registration can also be the owner. When `ownerAddress` is supplied, the
+AgentID is assigned to that address instead. The account that holds the owner wallet manages the
+identity, and onchain owner actions still need that wallet's signature, even when another wallet
+funded the original checkout.
+
+## AgentID NFT
+
+The AgentID NFT is the onchain ownership primitive for an identity. Public metadata can point to the
+identity's domain and declared capabilities. Applications should treat current API status and the
+onchain record as complementary signals rather than assuming an NFT alone proves service health.
+
+## x402 payment
+
+Registration uses x402 v2 with USDC on Base. The first request can return `402 Payment Required`.
+The client signs the accepted payment authorization and retries the same request with the standard
+`PAYMENT-SIGNATURE` header. A successful response includes settlement information in
+`PAYMENT-RESPONSE`.
+
+## Provisioning states
+
+Registration can finish immediately or continue asynchronously. The registration result reports
+`provisioningStatus`:
+
+| State               | Meaning                                                 |
+| ------------------- | ------------------------------------------------------- |
+| `completed`         | The selected identity services are ready.               |
+| `processing`        | The request is accepted and still progressing.          |
+| `recovery_required` | Support or an owner action is needed before completion. |
+
+Registration progress also has its own `status` (`processing`, `completed`, `action_required`,
+`failed`, `refunded`, `awaiting_payment`); see the [Registration API](/api-reference/register/).
+Do not submit a second paid registration merely because a request is still processing.
+
+## Renewal
+
+Each identity has an expiry. Any wallet can fund its RenewalVault balance. The wallet that holds
+the AgentID can turn on auto-renew on Base and withdraw unused funds. Renewal quotes are computed
+for the identity's services at renewal time.
+
+See [renewals and auto-renew](/guides/renewal/) for the supported flow.

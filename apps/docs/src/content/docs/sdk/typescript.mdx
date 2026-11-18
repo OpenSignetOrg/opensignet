@@ -1,0 +1,343 @@
+---
+title: TypeScript SDK
+description: Use the OpenSignet TypeScript SDK for registration, DNS, email, renewal planning and plan status.
+---
+
+## Install
+
+:::note[Package availability]
+Version 0.1.0 is not yet published to npm. Until it is, build from a source checkout of the
+[public repository](https://github.com/OpenSignetOrg/opensignet).
+:::
+
+```bash
+npm install @opensignet/sdk@0.1.0 viem@2.56.3
+```
+
+To build from a source checkout, run this from the repository root:
+
+```bash
+pnpm install
+pnpm --filter @opensignet/shared build
+pnpm --filter @opensignet/sdk build
+```
+
+The default API base is `https://api.opensignet.com/api/v1` and the default network is Base
+mainnet.
+
+## Renewal workflow
+
+The SDK also exports `inspectAgentRenewal`, `prepareAutoRenewChange`,
+`executeAutoRenewChange`, `confirmAutoRenewChange` and `RenewalWorkflowError`.
+The read and plan functions need no wallet or platform API key. They observe
+the canonical identity and RenewalVault at one hash, and can prepare an unsigned
+zero-value auto-renew setting transaction. The minimum fee is not a registrar
+quote, and setting confirmation is not domain renewal completion.
+
+Execution is a separate trusted host function requiring the owner's wallet and
+an actual human-review callback. It must not be exposed as a default LLM tool or
+wired to an LLM approval boolean. Read the [full renewal workflow](/guides/renewal/#independent-read-and-plan-workflow)
+for result fields, pending reservations, no-change behavior and uncertain outcomes.
+
+### How renewal reads work
+
+`inspectAgentRenewal` takes exactly one `domain` or `tokenId` and an optional `expectedOwner`.
+It validates input before any RPC request: a domain is a full ASCII domain, not a URL or path, and
+a token ID is a positive decimal uint256 string without leading zeros, not an OpenSignet agent
+UUID.
+
+Every read targets the canonical OpenSignet ERC-721 and RenewalVault on Base mainnet. The SDK
+takes the RPC-reported `safe` block and pins every contract read to it with the EIP-1898 selector
+`{ blockHash: safeHash, requireCanonical: true }`, including the Multicall3 batch, then checks the
+same block again before returning. There is no numeric-block or `latest` fallback: an
+unsupported selector fails with `UNAVAILABLE`.
+
+This is an RPC-backed observation, not a consensus proof, SPV or light-client verification, a
+DNS-control proof or KYC. The default public Base RPC is rate limited.
+For production, manually choose and inject a trusted Base RPC client created with `ccipRead: false`, which the SDK
+requires. The contract is OpenSignet's own ERC-721, not ERC-8004. Domain, Basename and ENS fields
+are stored claims, and metadata URIs are returned without being fetched: treat returned text as
+data, not instructions.
+
+`identity.consistent` summarizes internal record comparisons. It
+does not include `expectedOwnerMatches`, which is a separate comparison (`null` when no owner was
+supplied). An
+owner match with an active lifecycle does not establish agent safety or endorse its behavior. A
+missing identity returns `status: "not_found"`; an RPC failure is an error, not `not_found`.
+Errors are `RenewalWorkflowError` values with a stable code such as `INVALID_INPUT`,
+`WRONG_CHAIN`, `UNSAFE_SNAPSHOT` or `UNAVAILABLE`.
+
+## Platform API configuration
+
+The SDK keeps two surfaces separate: the renewal reads described above, which need no platform
+credentials, and the resumable, wallet-safe registration below, which uses authenticated platform
+APIs. Neither creates a new contract or x402 protocol.
+
+Relative `apiUrl` values are resolved against
+the browser location at construction, before signing or payment. Non-browser clients must
+provide an absolute URL. HTTPS is required except for explicitly configured HTTP loopback
+hosts (`localhost`, `127.0.0.1`, or `[::1]`). API bases cannot contain credentials, a query,
+or a fragment.
+
+## Construct a client
+
+```ts
+import { OpenSignet } from '@opensignet/sdk';
+import { createWalletClient, http } from 'viem';
+import { base } from 'viem/chains';
+import type { Account } from 'viem';
+
+// `account` comes from your wallet or key-management integration.
+export function createOpenSignet(account: Account) {
+  const walletClient = createWalletClient({ account, chain: base, transport: http() });
+
+  return new OpenSignet({ walletClient });
+}
+```
+
+Supply the account through your wallet or secret-management integration. For agent-scoped server
+operations, construct `OpenSignet` with an `apiKey` instead and keep that value server-side.
+
+## Quote and register
+
+```ts
+const quote = await openSignet.quote({
+  preferredName: 'research-agent',
+  tld: 'ai',
+  registerBasename: false,
+  registerEns: false,
+  emailUsername: 'hello',
+  years: 1,
+});
+
+const identity = await openSignet.register({
+  preferredName: 'research-agent',
+  tld: 'ai',
+  registerBasename: false,
+  registerEns: false,
+  emailUsername: 'hello',
+  years: 1,
+});
+
+console.log(quote.totalUsdc, identity.agentId, identity.provisioningStatus);
+```
+
+`register()` requires the payer's wallet address, either in the request or from the wallet client.
+The connected signer must match that payer; use `ownerAddress` for a different designated NFT
+owner. When the API returns an x402 challenge, the SDK signs and submits the exact challenged
+request once on Base mainnet. It does not automatically replay a paid request after an unknown
+outcome.
+
+## Request-bound payment signing
+
+For request-bound checkout the SDK creates one EIP-3009 payment signature using the issued request binding, preserving the complete
+selected x402 requirement as `accepted`, including every `extra` field unchanged. This is one
+payment signature, not a promise that wallet authentication will never request a separate signature.
+
+Before signing, it validates the exact Base-mainnet scheme/network, Base USDC asset, nonzero
+recipient, USDC EIP-712 domain, positive uint256 amount, authorization timeout, and request binding.
+When `extra.quoteExpiresAt` is present, it must be an unexpired ISO timestamp and limits the
+authorization expiry. These checks do not independently compare an earlier display quote or
+impose an application spending budget.
+
+The registration API's initial `402` supplies `accepts[0].extra.registrationQuote` as an opaque
+string and `accepts[0].extra.quoteExpiresAt` as an ISO timestamp. Echo the accepted requirement
+unchanged: do not parse or reconstruct the sealed quote, discard metadata, or reprice the request.
+Once the signed request has been submitted, never automatically sign a replacement after an
+ambiguous outcome, even if a later response includes another challenge or the quote expires.
+
+### Payment rejection errors
+
+The SDK exports `RegistrationPaymentRejectedError` for an explicit HTTP `4xx` response other
+than `408` that satisfies `registrationPaymentRejectionSchema`, including
+`paymentSubmission: { status: 'rejected', settlementAttempted: false }`. The reusable public
+schema is exported by `@opensignet/shared`. Both the HTTP status restriction and the valid
+payload are required; an HTTP error code, conflict, or message alone is not conclusive.
+
+| Error field           | Meaning                                                                     |
+| --------------------- | --------------------------------------------------------------------------- |
+| `code`                | `REGISTRATION_PAYMENT_REJECTED`.                                            |
+| `serverCode`          | Server diagnostic code, separate from the SDK error code.                   |
+| `message`             | Diagnostic message; do not parse it to classify payment outcomes.           |
+| `handle`              | Submission handle to retain for reference and payer-authenticated recovery. |
+| `settlementAttempted` | Always `false` for this error.                                              |
+
+This error confirms rejection before settlement was attempted for this submission. It does not
+assert payment success or decide an earlier attempt's outcome. HTTP `408`, `5xx`, timeouts,
+network failures, lost responses, and unconfirmed conflicts (such as a `409` without the valid
+rejection contract) remain `RegistrationPendingError` recovery cases. A rejection marker in a
+`408` or `5xx` body does not make it a safe rejection. Neither error authorizes automatic
+resending, repricing, or signing a replacement payment.
+
+## Asynchronous registration
+
+Submission, status, waiting, and recovery methods distinguish payment acceptance from completed
+registration. Never treat HTTP `202` as a completed `RegistrationResult`; use the SDK or integrate
+the [HTTP status contract](/api-reference/register/) directly.
+
+```ts
+import { RegistrationPaymentRejectedError, RegistrationPendingError } from '@opensignet/sdk';
+
+const controller = new AbortController();
+try {
+  const submission = await openSignet.submitRegistration(
+    { preferredName: 'research-agent', tld: 'com' },
+    { signal: controller.signal },
+  );
+  const result =
+    'status' in submission
+      ? await openSignet.waitForRegistration(submission, {
+          timeoutMs: 600_000,
+          signal: controller.signal,
+        })
+      : submission;
+  console.log(result.agentId);
+} catch (error) {
+  if (error instanceof RegistrationPaymentRejectedError) {
+    console.log(error.code, error.serverCode, error.message, error.handle);
+    // Review this rejected submission. Do not automatically resend payment.
+  } else if (error instanceof RegistrationPendingError) {
+    console.log(error.reason, error.handle);
+    // Read status later with the payer wallet. Do not start another paid checkout.
+  } else {
+    throw error;
+  }
+}
+```
+
+`register(args, { timeoutMs, signal })` combines submission and waiting. It sends
+`Prefer: respond-async`, preserves legacy `200` results, and handles `202` by polling GETs only.
+Submission and individual reads default to a 60-second deadline; the wait defaults to ten minutes
+after acceptance. The wait timeout does not extend a submission deadline. Polling honors the
+server's interval and transient-read `Retry-After` with a five-second minimum and stops when user
+action is required.
+
+`getRegistration(id)` returns `RegistrationProgress`; `getRegistrations({ limit, offset })` returns
+the payer's paginated list, defaulting to 20 entries with a maximum of 50. These methods never
+authorize with an agent API key or payment header.
+Wallet clients sign a request-bound `X-Agent-Signature` for every API request. It covers the
+method, URL, body digest and a single-use nonce, so the SDK never caches or reuses a signature.
+Each status poll therefore asks the wallet to sign. Use a local or server-side signer for
+autonomous polling. Browser apps should use `registrationAuth: 'session'` (the web session cookie) so a
+wallet prompt does not appear on every poll. Signing rejection and authorization failure stop
+the waiter.
+`createAgentSignatureHeader(signer, { method, url, body })` produces the same header for custom
+HTTP clients.
+Signature-authenticated registration requests omit cookies so another account's web session
+cannot override the signer. Status, list, and recovery reads send `expectedPayer` and verify
+`X-Authenticated-Wallet` on successful responses before decoding their bodies. The query parameter
+does not authenticate the request; it checks the authenticated identity against the intended payer.
+
+For an existing signed-in browser session, construct the client with `registrationAuth: 'session'`.
+Without a wallet client, also supply `registrationExpectedPayer` in the constructor or
+`expectedPayer` per request. Cookies are included and reads do not prompt the wallet. Unbound
+session-only reads fail locally, while a cookie belonging to another payer is rejected by the API.
+Use the same host for sign-in and reads.
+The payer is the authorized registration reader even when another wallet will own the NFT.
+
+On `completed`, the waiter returns `progress.result`. It never manufactures missing token IDs,
+transaction hashes, or metadata. Missing legacy results produce a pending recovery diagnostic.
+`RegistrationFailedError` represents a server-confirmed `failed` or `refunded` status;
+`RegistrationPendingError` represents timeout, abort, an unknown outcome, or an actionable state.
+Neither is an instruction to pay again.
+Minimal `202 action_required` responses also raise `RegistrationPendingError` with a reusable
+handle, without a second payment attempt.
+
+After a lost submission response, use its error handle with `getRegistration(handle.registrationId)`
+when an ID is known, or `recoverRegistration(handle)` when unknown. Recovery performs only
+payer-authenticated list/detail reads, matching the exact domain and inclusive submission time
+window. It scans at most ten pages of 50 entries (500 total) and refuses multiple matches, no match, or an
+incomplete search. Clock skew can prevent matching; no match is not proof that payment failed.
+No transport error triggers an automatic payment POST retry.
+SDK-generated pending handles also retain `payerAddress`; recovery cannot silently switch to a
+different signing wallet. Session-only callers can pass `handle.payerAddress` as `expectedPayer`
+when calling a detail read directly.
+Known-ID recovery checks the same domain, inclusive time window, and authenticated payer as
+unknown-ID discovery. An inconsistent handle is rejected rather than returning another purchase.
+When only the registration ID is known, use an authenticated `getRegistration()` call.
+
+HTTP `200` registration results are also schema-projected: required fields must be present,
+the returned domain must match the submitted request, and unknown fields are stripped,
+including unknown nested snapshot fields. Public snapshot values and items are retained without
+repricing or truncation. Invalid responses retain a pending handle and never trigger another payment.
+
+## Compatibility
+
+`register(args)` starts authenticated waiting after HTTP `202`. Use `submitRegistration()` for
+acceptance without waiting for asynchronous provisioning, and handle the structured pending and
+failed errors above. Registration does not use an agent API key for authentication. Custom API
+adapters must implement the documented status contract and expose `X-Authenticated-Wallet`.
+Constructor URL validation also applies to clients used only for discovery.
+
+Align and deduplicate viem to the reviewed 2.56.3 version across your client code and SDK
+dependencies. An independently pinned 2.55.8 `PublicClient` lacks the required
+`watchBlockHeaders` member and can fail TypeScript assignment. Arbitrary mixed-version viem
+compatibility is not guaranteed. The SDK is published as ESM only.
+
+The x402 packages remain aligned at 2.25.0. The payment helper does not impose the upstream
+default $1 spending cap. Unbound payments retain the existing upstream asset-selection behavior;
+request-bound payments use the Base USDC validation above. Neither path independently compares
+an earlier display quote or imposes an application spending budget; callers must authorize the
+payment terms.
+
+## Email and DNS
+
+```ts
+// `openSignet` from "Construct a client"; `agentId` is the identity's record ID.
+await openSignet.sendEmail(agentId, {
+  to: 'operator@example.com',
+  subject: 'Status',
+  text: 'Agent online.',
+  idempotencyKey: crypto.randomUUID(),
+});
+
+const records = await openSignet.listDnsRecords(agentId);
+// `desiredRecords` is the full record set you want, in the DNS API record format.
+const preview = await openSignet.previewDnsBatch(agentId, desiredRecords, 'merge');
+await openSignet.applyDnsBatch(agentId, desiredRecords, preview.baseRevision, 'merge');
+```
+
+Use [Email API](/api-reference/email/) and [DNS API](/api-reference/dns/) limits when designing
+automation.
+
+## Owner-controlled auto-renew
+
+Direct Base writes require the public RenewalVault address and a public ERC-8021 builder code:
+
+```ts
+import { parseUnits, type Address } from 'viem';
+
+// `walletClient` must be the owner's wallet; `publicClient` reads Base (viem `createPublicClient`).
+const openSignet = new OpenSignet({
+  walletClient,
+  publicClient,
+  renewalVaultAddress: '0xb7b19826a566ebd9e8b50bee986a8da04bbb2c0a' as Address,
+  builderCode: 'my_agent_app',
+});
+
+const status = await openSignet.getRenewalStatus(agentId);
+if (parseUnits(status.shortfallUsdc, 6) > 0n) {
+  await openSignet.fundRenewalVault(agentId, status.shortfallUsdc);
+}
+await openSignet.setAutoRenew(agentId, true, { waitForReceipt: true });
+```
+
+The wallet client must be the AgentID NFT owner for `setAutoRenew()`. The builder code contains 1
+to 32 lowercase letters, numbers, or underscores and is public attribution, not a credential.
+
+## Plans and other operations
+
+The SDK also includes reading your own identities, API key management from owner sessions, plan
+status, email usage and webhooks, DNS import/export, and owner-authorized vault withdrawal.
+
+Plans apply to the whole account and are bought or changed by a person from the dashboard or the
+[pricing page](https://opensignet.com/pricing), so the SDK reads them but never buys them.
+`getServicePlan()` returns the limits one identity has from its account plan:
+
+```ts
+const plan = await openSignet.getServicePlan(agentId);
+console.log(plan.entitlement.plan, plan.entitlement.limits.monthlyEmails);
+```
+
+Read the [API error contract](/api-reference/overview/#errors) and handle stable error codes rather
+than parsing message text.
