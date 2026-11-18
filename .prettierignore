@@ -1,0 +1,22 @@
+node_modules/
+local-tools/
+output/
+dist/
+build/
+.next/
+.open-next/
+.astro/
+.qa/
+.wrangler/
+packages/mcp-server/examples/crewai/.venv-native/
+packages/crewai-plugin/.venv-consumer/
+packages/autogen-plugin/.venv-consumer/
+apps/frontend/next-env.d.ts
+release/
+pnpm-lock.yaml
+AGENTS.md
+# Generated brand mirrors (source of truth: brand/)
+apps/frontend/public/brand/
+apps/frontend/public/favicon.ico
+apps/docs/public/brand/
+apps/docs/src/assets/brand/

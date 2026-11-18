@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# Raster artwork is byte-pinned; generated verification text and SVG source use canonical LF.
+*.png -text
+*.svg text eol=lf

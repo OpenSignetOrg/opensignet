@@ -1,0 +1,45 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["brand/**"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "out/**", ".next/**", ".open-next/**", ".astro/**"]
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@opensignet/shared#typecheck": {
+      "dependsOn": ["^build", "build"],
+      "outputs": []
+    },
+    "@opensignet/sdk#typecheck": {
+      "dependsOn": ["^build", "build"],
+      "outputs": []
+    },
+    "@opensignet/mcp-server#typecheck": {
+      "dependsOn": ["^build", "build"],
+      "outputs": []
+    },
+    "@opensignet/agentkit-plugin#typecheck": {
+      "dependsOn": ["^build", "build"],
+      "outputs": []
+    },
+    "@opensignet/eliza-plugin#typecheck": {
+      "dependsOn": ["^build", "build"],
+      "outputs": []
+    },
+    "@opensignet/langchain-plugin#typecheck": {
+      "dependsOn": ["^build", "build"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    }
+  }
+}
