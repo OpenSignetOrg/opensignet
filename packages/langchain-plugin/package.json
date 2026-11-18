@@ -1,0 +1,66 @@
+{
+  "name": "@opensignet/langchain-plugin",
+  "version": "0.1.0",
+  "description": "Read-only LangChain tools for OpenSignet identity and renewal observations",
+  "keywords": [
+    "opensignet",
+    "langchain",
+    "ai-agents",
+    "identity",
+    "base",
+    "renewal"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenSignetOrg/opensignet.git",
+    "directory": "packages/langchain-plugin"
+  },
+  "homepage": "https://docs.opensignet.com/frameworks/langchain",
+  "bugs": {
+    "url": "https://github.com/OpenSignetOrg/opensignet/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "package.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "pnpm run build",
+    "test": "pnpm --filter @opensignet/sdk build && pnpm run build && node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@opensignet/sdk": "workspace:^",
+    "zod": "4.6.7"
+  },
+  "peerDependencies": {
+    "@langchain/core": "^1.2.11"
+  },
+  "devDependencies": {
+    "@langchain/core": "1.2.11",
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2",
+    "viem": "^2.56.3"
+  }
+}

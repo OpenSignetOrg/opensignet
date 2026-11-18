@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "opensignet-autogen"
+version = "0.1.0"
+description = "Guarded native AutoGen workbench for OpenSignet identity and renewal planning"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "OpenSignet contributors" }]
+keywords = ["opensignet", "autogen", "mcp", "base", "ai-agents"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "autogen-agentchat==0.7.5",
+  "autogen-core==0.7.5",
+  "autogen-ext[mcp]==0.7.5",
+  "mcp==1.30.0",
+  "pydantic==2.13.5",
+]
+
+[project.urls]
+Homepage = "https://opensignet.com"
+Documentation = "https://docs.opensignet.com/frameworks/autogen/"
+Repository = "https://github.com/OpenSignetOrg/opensignet/tree/main/packages/autogen-plugin"
+Issues = "https://github.com/OpenSignetOrg/opensignet/issues"
+
+[project.scripts]
+opensignet-autogen = "opensignet_autogen.cli:main"
+opensignet-autogen-assistant = "opensignet_autogen.assistant:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/opensignet_autogen"]
+only-include = [
+  "src/opensignet_autogen/__init__.py",
+  "src/opensignet_autogen/__main__.py",
+  "src/opensignet_autogen/workbench.py",
+  "src/opensignet_autogen/cli.py",
+  "src/opensignet_autogen/assistant.py",
+  "src/opensignet_autogen/py.typed",
+]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+  ".gitignore",
+  "pyproject.toml",
+  "README.md",
+  "LICENSE",
+  "NOTICE",
+  "src/opensignet_autogen/__init__.py",
+  "src/opensignet_autogen/__main__.py",
+  "src/opensignet_autogen/workbench.py",
+  "src/opensignet_autogen/cli.py",
+  "src/opensignet_autogen/assistant.py",
+  "src/opensignet_autogen/py.typed",
+]
