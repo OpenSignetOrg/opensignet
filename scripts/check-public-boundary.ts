@@ -16,7 +16,6 @@ const allowedRootFiles = new Set([
   '.prettierignore',
   '.prettierrc',
   '.prettierrc.json',
-  'AGENTS.md',
   'AI_DISCLOSURE.md',
   'CHANGELOG.md',
   'CODE_OF_CONDUCT.md',
@@ -60,6 +59,10 @@ const forbiddenPathRules: readonly Rule[] = [
   [/^services(?:\/|$)/i, 'private services path'],
   [/^infrastructure(?:\/|$)/i, 'private infrastructure path'],
   [/^project-planning(?:\/|$)/i, 'private planning path'],
+  [
+    /(?:^|\/)(?:AGENTS|CLAUDE)\.md$/i,
+    'contributor and coding-agent rules file (kept in the private repository)',
+  ],
   [/^apps\/frontend\/src\/app\/admin(?:\/|$)/i, 'private admin application path'],
   [/^apps\/frontend\/src\/components\/admin(?:\/|$)/i, 'private admin component path'],
   [
@@ -322,8 +325,7 @@ function checkRepository(): void {
     if (!isText(buffer)) continue;
     const text = buffer.toString('utf8');
 
-    // The repository rules name the private repository once to define the boundary itself.
-    if (path !== 'AGENTS.md' && text.toLowerCase().includes(privateRepositoryName)) {
+    if (text.toLowerCase().includes(privateRepositoryName)) {
       errors.push(`${path}: private repository name is forbidden`);
     }
     for (const [pattern, description] of forbiddenSecretPatterns) {
@@ -378,8 +380,12 @@ function checkRepository(): void {
 }
 
 export function runSelfTest(): void {
-  assert.equal(repositoryScopeViolation('AGENTS.md'), null);
+  assert.equal(repositoryScopeViolation('AGENTS.md'), 'unapproved root file');
   assert.equal(repositoryScopeViolation('AGENTS-private.md'), 'unapproved root file');
+  assert.match(pathViolation('AGENTS.md') ?? '', /coding-agent rules file/);
+  assert.match(pathViolation('CLAUDE.md') ?? '', /coding-agent rules file/);
+  assert.match(pathViolation('apps/frontend/AGENTS.md') ?? '', /coding-agent rules file/);
+  assert.equal(pathViolation('apps/frontend/src/lib/agent-onboarding.ts'), null);
   assert.equal(repositoryScopeViolation('AI_DISCLOSURE.md'), null);
   assert.equal(repositoryScopeViolation('CHANGELOG.md'), null);
   assert.equal(repositoryScopeViolation('RELEASING.md'), null);
