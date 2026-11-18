@@ -1,0 +1,199 @@
+import { z, type ZodType } from 'zod';
+import {
+  AVATAR_MAX_BYTES,
+  accountErrorCodes,
+  accountSessionsSchema,
+  accountSettingsSchema,
+  walletTokenSchema,
+  nonceSchema,
+  type AccountErrorCode,
+  type AccountSession,
+  type AccountSettings,
+} from './account-contract';
+import { emailChallengeSchema, signInErrorCodes, type EmailChallenge } from './sign-in-contract';
+import { signInErrorMessage, type SignInFailure } from './sign-in-client';
+import { API_TIMEOUT_MS } from './transport-policy';
+
+export type AccountFailure = SignInFailure | AccountErrorCode;
+
+const errorBodySchema = z
+  .object({
+    error: z.enum([...signInErrorCodes, ...accountErrorCodes]),
+    attemptsRemaining: z.number().int().nonnegative().optional(),
+    retryAfterSeconds: z.number().int().nonnegative().optional(),
+  })
+  .passthrough();
+
+/** A failed settings action, with a plain-language message for the person. */
+export class AccountError extends Error {
+  readonly code: AccountFailure;
+  readonly attemptsRemaining?: number;
+  readonly retryAfterSeconds?: number;
+
+  constructor(
+    code: AccountFailure,
+    details: { attemptsRemaining?: number; retryAfterSeconds?: number } = {},
+  ) {
+    super(accountErrorMessage(code, details));
+    this.name = 'AccountError';
+    this.code = code;
+    this.attemptsRemaining = details.attemptsRemaining;
+    this.retryAfterSeconds = details.retryAfterSeconds;
+  }
+}
+
+export function accountErrorMessage(
+  code: AccountFailure,
+  details: { attemptsRemaining?: number; retryAfterSeconds?: number } = {},
+): string {
+  switch (code) {
+    case 'step_up_required':
+      return 'Approve this change to continue.';
+    case 'email_taken':
+      return 'This email belongs to another OpenSignet account. Use a different email.';
+    case 'email_same':
+      return 'That’s already the email on your account.';
+    case 'wallet_taken':
+      return 'This wallet belongs to another OpenSignet account. Choose a different wallet.';
+    case 'last_sign_in_method':
+      return 'You need at least one way to sign in. Add another method before removing this one.';
+    case 'avatar_limit':
+      return 'You’ve changed your photo twice this month. You can change it again next month.';
+    case 'invalid_image':
+      return 'Use a PNG, JPG or WebP image up to 5 MB.';
+    case 'wallet_not_empty':
+      return 'Move the funds out of your OpenSignet wallet before deleting your account.';
+    case 'wallet_exists':
+      return 'Your OpenSignet wallet is already set up.';
+    default:
+      return signInErrorMessage(code, details);
+  }
+}
+
+export type WalletWindowPurpose = 'setup' | 'export' | 'add_passkey' | 'recovery_kit' | 'recover';
+
+const WALLET_WINDOW_PATHS: Record<WalletWindowPurpose, string> = {
+  setup: 'setup',
+  export: 'export',
+  add_passkey: 'passkeys',
+  recovery_kit: 'recovery-kit',
+  recover: 'recover',
+};
+
+export interface AccountClient {
+  get(signal?: AbortSignal): Promise<AccountSettings>;
+  updateName(displayName: string | null): Promise<AccountSettings>;
+  uploadAvatar(file: Blob): Promise<AccountSettings>;
+  removeAvatar(): Promise<AccountSettings>;
+  startEmail(email: string, turnstileToken: string): Promise<EmailChallenge>;
+  verifyEmail(code: string): Promise<AccountSettings>;
+  removeEmail(): Promise<AccountSettings>;
+  unlinkGoogle(): Promise<AccountSettings>;
+  walletNonce(): Promise<string>;
+  linkWallet(message: string, signature: string): Promise<AccountSettings>;
+  unlinkWallet(): Promise<AccountSettings>;
+  sessions(signal?: AbortSignal): Promise<AccountSession[]>;
+  revokeSession(id: string): Promise<void>;
+  revokeOtherSessions(): Promise<void>;
+  stepUpEmailStart(): Promise<EmailChallenge>;
+  stepUpEmailVerify(code: string): Promise<void>;
+  stepUpWalletNonce(): Promise<string>;
+  stepUpWallet(message: string, signature: string): Promise<void>;
+  /** Single-use tokens for the wallet window (setup, export, backup passkey). */
+  walletWindowToken(purpose: WalletWindowPurpose): Promise<string>;
+  deleteAccount(): Promise<void>;
+  signOut(): Promise<void>;
+}
+
+const empty = z.unknown();
+
+export function createAccountClient(fetcher: typeof fetch = fetch): AccountClient {
+  async function call<T>(
+    path: string,
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    schema: ZodType<T> | null,
+    body?: unknown,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const deadline = AbortSignal.timeout(API_TIMEOUT_MS);
+    const combined = signal ? AbortSignal.any([signal, deadline]) : deadline;
+    const binary = body instanceof Blob;
+    let response: Response;
+    try {
+      response = await fetcher(`/api/v1/${path}`, {
+        method,
+        credentials: 'include',
+        cache: 'no-store',
+        redirect: 'error',
+        headers: {
+          Accept: 'application/json',
+          ...(body === undefined
+            ? {}
+            : { 'Content-Type': binary ? body.type : 'application/json' }),
+        },
+        body: body === undefined ? undefined : binary ? body : JSON.stringify(body),
+        signal: combined,
+      });
+    } catch {
+      if (signal?.aborted) throw signal.reason;
+      throw new AccountError('unavailable');
+    }
+    if (response.status === 204) return undefined as T;
+    const payload: unknown = await response.json().catch(() => null);
+    if (signal?.aborted) throw signal.reason;
+    if (!response.ok) {
+      const parsed = errorBodySchema.safeParse(payload);
+      if (parsed.success)
+        throw new AccountError(parsed.data.error, {
+          attemptsRemaining: parsed.data.attemptsRemaining,
+          retryAfterSeconds: parsed.data.retryAfterSeconds,
+        });
+      if (response.status === 401) throw new AccountError('unauthenticated');
+      if (response.status === 413) throw new AccountError('invalid_image');
+      if (response.status === 429) throw new AccountError('rate_limited');
+      throw new AccountError('unavailable');
+    }
+    if (!schema) return undefined as T;
+    const parsed = schema.safeParse(payload);
+    if (!parsed.success) throw new AccountError('unavailable');
+    return parsed.data;
+  }
+
+  const settings = accountSettingsSchema;
+  return {
+    get: (signal) => call('account', 'GET', settings, undefined, signal),
+    updateName: (displayName) => call('account', 'PATCH', settings, { displayName }),
+    uploadAvatar: (file) => {
+      if (file.size > AVATAR_MAX_BYTES) return Promise.reject(new AccountError('invalid_image'));
+      return call('account/avatar', 'PUT', settings, file);
+    },
+    removeAvatar: () => call('account/avatar', 'DELETE', settings),
+    startEmail: (email, turnstileToken) =>
+      call('account/email/start', 'POST', emailChallengeSchema, { email, turnstileToken }),
+    verifyEmail: (code) => call('account/email/verify', 'POST', settings, { code }),
+    removeEmail: () => call('account/email', 'DELETE', settings),
+    unlinkGoogle: () => call('account/google', 'DELETE', settings),
+    walletNonce: async () => (await call('account/wallet/nonce', 'GET', nonceSchema)).nonce,
+    linkWallet: (message, signature) =>
+      call('account/wallet', 'PUT', settings, { message, signature }),
+    unlinkWallet: () => call('account/wallet', 'DELETE', settings),
+    sessions: async (signal) =>
+      (await call('account/sessions', 'GET', accountSessionsSchema, undefined, signal)).sessions,
+    revokeSession: (id) =>
+      call(`account/sessions/${encodeURIComponent(id)}`, 'DELETE', empty).then(() => undefined),
+    revokeOtherSessions: () =>
+      call('account/sessions/revoke-others', 'POST', empty).then(() => undefined),
+    stepUpEmailStart: () => call('auth/step-up/email/start', 'POST', emailChallengeSchema, {}),
+    stepUpEmailVerify: (code) =>
+      call('auth/step-up/email/verify', 'POST', empty, { code }).then(() => undefined),
+    stepUpWalletNonce: async () =>
+      (await call('auth/step-up/wallet/nonce', 'GET', nonceSchema)).nonce,
+    stepUpWallet: (message, signature) =>
+      call('auth/step-up/wallet', 'POST', empty, { message, signature }).then(() => undefined),
+    walletWindowToken: async (purpose) =>
+      (await call(`wallet/${WALLET_WINDOW_PATHS[purpose]}/start`, 'POST', walletTokenSchema, {}))
+        .token,
+    deleteAccount: () => call('account', 'DELETE', empty).then(() => undefined),
+    signOut: () => call('auth/session', 'DELETE', empty).then(() => undefined),
+  };
+}

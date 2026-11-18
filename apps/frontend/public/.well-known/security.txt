@@ -1,0 +1,6 @@
+Contact: https://github.com/OpenSignetOrg/opensignet/security/advisories/new
+Contact: mailto:security@opensignet.com
+Expires: 2027-11-01T00:00:00.000Z
+Policy: https://github.com/OpenSignetOrg/opensignet/security/policy
+Preferred-Languages: en
+Canonical: https://opensignet.com/.well-known/security.txt

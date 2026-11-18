@@ -1,0 +1,1222 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Ban,
+  AtSign,
+  AlertCircle,
+  CheckCircle2,
+  Inbox,
+  Loader2,
+  Mail,
+  MailCheck,
+  Pencil,
+  BadgePlus,
+  RefreshCw,
+  Send,
+  ShieldCheck,
+  Trash2,
+  X,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { useManagementSession } from '@/components/agents/management-session';
+import { cn, formatDate } from '@/lib/utils';
+import type { EmailInboxView as EmailInboxRow } from '@/lib/backend-contracts';
+import {
+  activeEmailAddresses,
+  addressChangeLabel,
+  addressControlsBlocked,
+  addressMutationRequest,
+  emailFromCanReconcile,
+  emailSendAllowed,
+  initialEmailAddressState,
+  invalidateEmailObservation,
+  isAddressChangeTerminal,
+  observeEmailAddresses,
+  readAddressMutation,
+  reconcileEmailFrom,
+  type AddressRequest,
+  type EmailAddressState,
+} from '@/lib/email-address-lifecycle';
+import { API_TIMEOUT_MS } from '@/lib/transport-policy';
+
+type EmailDirection = 'all' | 'inbound' | 'outbound' | 'unread';
+
+interface EmailMessage {
+  id: string;
+  direction: string;
+  fromAddress: string;
+  toAddress: string | null;
+  subject: string | null;
+  text: string | null;
+  verificationCodes: string[];
+  spamVerdict: string | null;
+  virusVerdict: string | null;
+  receivedAt: string;
+  read: boolean;
+  status: 'queued' | 'processing' | 'accepted' | 'failed';
+  lastError: string | null;
+}
+
+interface BlockEntry {
+  id: string;
+  value: string;
+  reason: string | null;
+  createdAt: string;
+}
+
+interface EmailLimitInfo {
+  plan: string;
+  planLabel: string;
+  emailAliases: number;
+}
+
+export function EmailManagement({
+  agentId,
+  inbox,
+}: {
+  agentId: string;
+  inbox: EmailInboxRow | null;
+}) {
+  const { signedIn, requireSignIn, sessionEnded } = useManagementSession();
+  const unauthorized = (res: Response) => {
+    if (res.status !== 401) return false;
+    sessionEnded();
+    return true;
+  };
+  const [inboxStatus, setInboxStatus] = useState<EmailInboxRow | null>(inbox);
+  const [addressState, setAddressState] = useState(initialEmailAddressState);
+  const addressStateRef = useRef(addressState);
+  const loadRevision = useRef(0);
+  const viewScope = agentId;
+  const viewScopeRef = useRef(viewScope);
+  viewScopeRef.current = viewScope;
+  const [limitInfo, setLimitInfo] = useState<EmailLimitInfo | null>(null);
+  const [filter, setFilter] = useState<EmailDirection>('all');
+  const [messages, setMessages] = useState<EmailMessage[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [blocklist, setBlocklist] = useState<BlockEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
+  const [aliasLoading, setAliasLoading] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [sendLoading, setSendLoading] = useState(false);
+  const [usageRevision, setUsageRevision] = useState(0);
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  const [blockValue, setBlockValue] = useState('');
+  const [primaryDraft, setPrimaryDraft] = useState('hello');
+  const [aliasDraft, setAliasDraft] = useState('');
+  const [form, setForm] = useState({ to: '', fromAddress: '', subject: '', text: '' });
+
+  const unreadCount = messages.filter((message) => !message.read).length;
+  const selectedMessage = useMemo(
+    () => messages.find((message) => message.id === selectedId) ?? null,
+    [messages, selectedId],
+  );
+  const activeAddresses = useMemo(
+    () => activeEmailAddresses(addressState.addresses, inboxStatus),
+    [addressState.addresses, inboxStatus],
+  );
+  const primaryAddress =
+    activeAddresses.find((address) => address.kind === 'primary')?.emailAddress ?? '';
+  const primaryDomain = readDomainPart(primaryAddress || inboxStatus?.emailAddress || '');
+  const primaryDraftAddress = primaryDomain
+    ? `${primaryDraft || 'hello'}@${primaryDomain}`.toLowerCase()
+    : '';
+  const aliasAddresses = activeAddresses.filter((address) => address.kind === 'alias');
+  const aliasLimit = limitInfo?.emailAliases ?? 0;
+  const aliasSlotsLeft = Math.max(0, aliasLimit - aliasAddresses.length);
+  const addressBlocked = addressControlsBlocked(addressState) || aliasLoading || sendLoading;
+  const sendAllowed = emailSendAllowed(addressState, form.fromAddress, activeAddresses);
+  const unknownRequest = addressState.outcome === 'unknown' && addressState.request;
+
+  function updateAddressState(next: EmailAddressState) {
+    addressStateRef.current = next;
+    setAddressState(next);
+  }
+
+  const invalidateMessageReads = useCallback(() => {
+    loadRevision.current++;
+  }, []);
+
+  useEffect(() => {
+    invalidateMessageReads();
+    updateAddressState(initialEmailAddressState());
+    setAliasLoading(false);
+    return invalidateMessageReads;
+  }, [viewScope, invalidateMessageReads]);
+
+  useEffect(() => {
+    setInboxStatus(inbox);
+    if (inbox?.emailAddress) {
+      setPrimaryDraft(readLocalPart(inbox.emailAddress));
+    }
+  }, [inbox]);
+
+  useEffect(() => {
+    if (!emailFromCanReconcile(addressState)) return;
+    setForm((current) => ({
+      ...current,
+      fromAddress: reconcileEmailFrom(current.fromAddress, activeAddresses),
+    }));
+  }, [activeAddresses, addressState]);
+
+  useEffect(() => {
+    if (!inboxStatus || !signedIn) return;
+    void loadMessages(filter);
+    void loadBlocklist();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, inboxStatus?.id, signedIn, filter]);
+
+  function ensureSignedIn() {
+    return requireSignIn();
+  }
+
+  async function loadMessages(nextFilter = filter, sync = false) {
+    if (!inboxStatus) return;
+    if (!signedIn) return;
+    setLoading(true);
+    const revision = ++loadRevision.current;
+    const scope = viewScopeRef.current;
+    const currentLoad = () => revision === loadRevision.current && scope === viewScopeRef.current;
+    try {
+      const params = new URLSearchParams({ limit: '50', sync: String(sync) });
+      if (nextFilter === 'inbound' || nextFilter === 'outbound') {
+        params.set('direction', nextFilter);
+      }
+      if (nextFilter === 'unread') params.set('unreadOnly', 'true');
+      const res = await fetch(`/api/v1/agents/${agentId}/email?${params}`, {
+        credentials: 'include',
+        cache: 'no-store',
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      });
+      if (unauthorized(res)) return;
+      const data = await res.json().catch(() => null);
+      if (!currentLoad()) return;
+      if (!res.ok) throw new Error('Email observation unavailable');
+      const observation = observeEmailAddresses(addressStateRef.current, data, agentId, sync);
+      updateAddressState(observation.state);
+      if (observation.value.inbox !== undefined) setInboxStatus(observation.value.inbox);
+      const primary = observation.state.addresses?.find(
+        (entry) => entry.kind === 'primary' && entry.status === 'active',
+      );
+      if (primary) setPrimaryDraft(readLocalPart(primary.emailAddress));
+      if (data?.limits) {
+        setLimitInfo(data.limits as EmailLimitInfo);
+      }
+      const nextMessages = Array.isArray(data?.messages) ? data.messages : [];
+      setMessages(nextMessages);
+      setSelectedId((current) => current ?? nextMessages[0]?.id ?? null);
+      setUsageRevision((current) => current + 1);
+    } catch {
+      if (!currentLoad()) return;
+      updateAddressState(invalidateEmailObservation(addressStateRef.current));
+      toast.error('Could not load email', {
+        description: 'Email status could not be confirmed. Your draft is unchanged.',
+      });
+    } finally {
+      if (currentLoad()) setLoading(false);
+    }
+  }
+
+  async function loadBlocklist() {
+    if (!inboxStatus || !signedIn) return;
+    setBlockLoading(true);
+    try {
+      const res = await fetch(`/api/v1/agents/${agentId}/email/blocklist`, {
+        credentials: 'include',
+      });
+      if (unauthorized(res)) return;
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message ?? 'Nothing changed. Try again in a moment.');
+      setBlocklist(Array.isArray(data?.entries) ? data.entries : []);
+    } catch {
+      setBlocklist([]);
+    } finally {
+      setBlockLoading(false);
+    }
+  }
+
+  async function sendEmail(event: React.FormEvent) {
+    event.preventDefault();
+    if (!inboxStatus || !sendAllowed || !ensureSignedIn()) return;
+    if (!emailSendAllowed(addressStateRef.current, form.fromAddress, activeAddresses)) return;
+    setSendLoading(true);
+    try {
+      const res = await fetch(`/api/v1/agents/${agentId}/email/send`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: form.to
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean),
+          fromAddress: form.fromAddress,
+          subject: form.subject,
+          text: form.text,
+        }),
+      });
+      if (unauthorized(res)) return;
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message ?? 'Nothing changed. Try again in a moment.');
+      toast.success('Email queued');
+      setForm({ to: '', fromAddress: primaryAddress, subject: '', text: '' });
+      setComposeOpen(false);
+      await loadMessages(filter);
+    } catch (err) {
+      toast.error('Couldn’t send the email', {
+        description: err instanceof Error ? err.message : 'Please try again.',
+      });
+    } finally {
+      setSendLoading(false);
+    }
+  }
+
+  async function updateRead(message: EmailMessage, read: boolean) {
+    if (!ensureSignedIn()) return;
+    try {
+      // Browser event handler in this client component; fixed same-origin API path.
+      // nosemgrep: nodejs_scan.javascript-ssrf-rule-node_ssrf
+      const res = await fetch(`/api/v1/agents/${agentId}/email/${message.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ read }),
+      });
+      if (unauthorized(res)) return;
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message ?? 'Nothing changed. Try again in a moment.');
+      const next = data?.message as EmailMessage;
+      setMessages((current) => current.map((item) => (item.id === message.id ? next : item)));
+    } catch (err) {
+      toast.error('Couldn’t update the message', {
+        description: err instanceof Error ? err.message : 'Please try again.',
+      });
+    }
+  }
+
+  async function deleteMessage(message: EmailMessage) {
+    if (!ensureSignedIn()) return;
+    if (!window.confirm('Delete this email from OpenSignet? This cannot be undone.')) return;
+    setDeletingMessageId(message.id);
+    try {
+      const res = await fetch(`/api/v1/agents/${agentId}/email/${message.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (unauthorized(res)) return;
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message ?? 'Nothing changed. Try again in a moment.');
+      setMessages((current) => current.filter((item) => item.id !== message.id));
+      setSelectedId(null);
+      toast.success('Email deleted');
+    } catch (err) {
+      toast.error('Could not delete email', {
+        description: err instanceof Error ? err.message : 'Please try again.',
+      });
+    } finally {
+      setDeletingMessageId(null);
+    }
+  }
+
+  async function addBlocklist(event: React.FormEvent) {
+    event.preventDefault();
+    if (!blockValue.trim() || !ensureSignedIn()) return;
+    setBlockLoading(true);
+    try {
+      const res = await fetch(`/api/v1/agents/${agentId}/email/blocklist`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: blockValue.trim() }),
+      });
+      if (unauthorized(res)) return;
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message ?? 'Nothing changed. Try again in a moment.');
+      setBlockValue('');
+      await loadBlocklist();
+      toast.success('Sender blocked');
+    } catch (err) {
+      toast.error('Couldn’t block the sender', {
+        description: err instanceof Error ? err.message : 'Please try again.',
+      });
+    } finally {
+      setBlockLoading(false);
+    }
+  }
+
+  async function deleteBlock(id: string) {
+    if (!ensureSignedIn()) return;
+    setBlockLoading(true);
+    try {
+      const res = await fetch(`/api/v1/agents/${agentId}/email/blocklist/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (unauthorized(res)) return;
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message ?? 'Nothing changed. Try again in a moment.');
+      setBlocklist((current) => current.filter((entry) => entry.id !== id));
+      toast.success('Block removed');
+    } catch (err) {
+      toast.error('Couldn’t remove the block', {
+        description: err instanceof Error ? err.message : 'Please try again.',
+      });
+    } finally {
+      setBlockLoading(false);
+    }
+  }
+
+  async function mutateAddress(request: AddressRequest, retry = false) {
+    if (aliasLoading || !ensureSignedIn()) return;
+    const current = addressStateRef.current;
+    if (
+      retry
+        ? current.outcome !== 'unknown' || current.request?.requestId !== request.requestId
+        : addressControlsBlocked(current)
+    )
+      return;
+    const scope = viewScopeRef.current;
+    loadRevision.current++;
+    setLoading(false);
+    updateAddressState({
+      ...invalidateEmailObservation(current),
+      request,
+      outcome: 'sending',
+      change: retry ? current.change : null,
+    });
+    setAliasLoading(true);
+    try {
+      const transport = addressMutationRequest(agentId, request);
+      // Browser-only mutation; helper encodes the ID and query into a fixed same-origin API path.
+      // nosemgrep: nodejs_scan.javascript-ssrf-rule-node_ssrf
+      const res = await fetch(transport.url, {
+        ...transport.init,
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      });
+      if (unauthorized(res)) return;
+      const data: unknown = await res.json().catch(() => null);
+      if (scope !== viewScopeRef.current) return;
+      if (!retry && [400, 401, 402, 403, 404, 409, 422].includes(res.status)) {
+        updateAddressState({
+          ...invalidateEmailObservation(addressStateRef.current),
+          change: null,
+          request: null,
+          outcome: null,
+        });
+        const message =
+          data && typeof data === 'object' && 'message' in data && typeof data.message === 'string'
+            ? data.message
+            : 'The address change was rejected. Reload the inbox before trying again.';
+        toast.error('Address change rejected', { description: message });
+        await loadMessages(filter, true);
+        return;
+      }
+      const result = readAddressMutation(
+        res.status,
+        data,
+        request,
+        agentId,
+        !current.service || current.service.state === 'provider-managed',
+      );
+      if (result.kind === 'async') {
+        updateAddressState({
+          ...addressStateRef.current,
+          change: result.change,
+          service: { state: 'unchecked' },
+          request: isAddressChangeTerminal(result.change) ? null : request,
+          outcome: isAddressChangeTerminal(result.change) ? null : 'accepted',
+        });
+      } else {
+        updateAddressState({
+          ...addressStateRef.current,
+          addresses: result.addresses,
+          observed: true,
+          request: null,
+          outcome: null,
+          change: null,
+        });
+        if (result.inbox) setInboxStatus(result.inbox);
+        toast.success(
+          request.action === 'primary-rename'
+            ? 'Primary email updated'
+            : request.action === 'alias-create'
+              ? 'Alias created'
+              : 'Alias removed',
+        );
+      }
+      if (request.action === 'alias-create') setAliasDraft('');
+      await loadMessages(filter);
+    } catch {
+      if (scope !== viewScopeRef.current) return;
+      updateAddressState({
+        ...invalidateEmailObservation(addressStateRef.current),
+        request,
+        outcome: 'unknown',
+      });
+    } finally {
+      if (scope === viewScopeRef.current) setAliasLoading(false);
+    }
+  }
+
+  async function updatePrimaryEmail(event: React.FormEvent) {
+    event.preventDefault();
+    if (addressBlocked || !primaryDraft.trim()) return;
+    const username = sanitizeEmailUsername(primaryDraft);
+    const nextAddress = primaryDomain ? `${username}@${primaryDomain}`.toLowerCase() : username;
+    if (
+      primaryAddress &&
+      nextAddress !== primaryAddress.toLowerCase() &&
+      !window.confirm(
+        `Change the primary email to ${nextAddress}? The current primary address ${primaryAddress} will stop receiving new mail.`,
+      )
+    ) {
+      return;
+    }
+    await mutateAddress({
+      requestId: crypto.randomUUID(),
+      action: 'primary-rename',
+      target: nextAddress,
+    });
+  }
+
+  async function createAlias(event: React.FormEvent) {
+    event.preventDefault();
+    if (addressBlocked || !aliasDraft.trim() || !primaryDomain) return;
+    await mutateAddress({
+      requestId: crypto.randomUUID(),
+      action: 'alias-create',
+      target: `${sanitizeEmailUsername(aliasDraft)}@${primaryDomain}`.toLowerCase(),
+    });
+  }
+
+  async function deleteAlias(emailAddress: string) {
+    if (addressBlocked) return;
+    await mutateAddress({
+      requestId: crypto.randomUUID(),
+      action: 'alias-delete',
+      target: emailAddress,
+    });
+  }
+
+  if (!inboxStatus) {
+    return (
+      <Card className="premium-surface mb-6">
+        <CardContent className="p-4 sm:p-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary">
+              <Mail className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div>
+              <h2 className="font-semibold">Email</h2>
+              <p className="text-sm text-muted-foreground">
+                Included email provisioning is not ready yet.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="premium-surface mb-6 min-w-0" aria-label="Email management">
+      <CardHeader className="p-4 sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="text-lg sm:text-xl">Email</CardTitle>
+              <Badge
+                variant={
+                  !addressControlsBlocked(addressState) &&
+                  (addressState.service && addressState.service.state !== 'provider-managed'
+                    ? addressState.service.state === 'ready'
+                    : inboxStatus.verificationStatus === 'Success')
+                    ? 'success'
+                    : 'warning'
+                }
+              >
+                {addressState.changeUnavailable
+                  ? 'Address status unavailable'
+                  : addressState.request || !isAddressChangeTerminal(addressState.change)
+                    ? 'Address update pending'
+                    : addressState.service && addressState.service.state !== 'provider-managed'
+                      ? addressState.service.state === 'ready'
+                        ? 'Email ready'
+                        : addressState.service.state === 'unchecked'
+                          ? 'Email not checked'
+                          : 'Email pending'
+                      : inboxStatus.verificationStatus}
+              </Badge>
+              {unreadCount > 0 && <Badge variant="secondary">{unreadCount} unread</Badge>}
+            </div>
+            <div className="wrap-anywhere mt-2 font-mono text-sm text-muted-foreground">
+              {primaryAddress || inboxStatus.emailAddress}
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => (requireSignIn() ? loadMessages(filter, true) : undefined)}
+              disabled={loading || aliasLoading}
+              className="w-full sm:w-auto"
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Refresh
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setComposeOpen((value) => !value)}
+              className="w-full sm:w-auto"
+            >
+              <Send className="h-4 w-4" />
+              Send Email
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+        {(addressState.changeUnavailable || addressState.request || addressState.change) && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-4 flex min-w-0 flex-col gap-2 border-y border-border/60 py-3 text-sm"
+          >
+            <div className="flex items-start gap-2">
+              {addressState.changeUnavailable ||
+              unknownRequest ||
+              ['uncertain', 'rejected'].includes(addressState.change?.phase ?? '') ? (
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+              ) : (
+                <Mail className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+              <div className="min-w-0">
+                <p className="font-medium">
+                  {addressState.changeUnavailable
+                    ? 'Address status unavailable'
+                    : unknownRequest
+                      ? 'Request status unknown'
+                      : addressState.outcome === 'sending'
+                        ? 'Submitting address change'
+                        : addressState.change
+                          ? addressChangeLabel(addressState.change)
+                          : 'Address change awaiting confirmation'}
+                </p>
+                <p className="wrap-anywhere font-mono text-xs text-muted-foreground">
+                  {addressState.request?.target ?? addressState.change?.target}
+                </p>
+                {unknownRequest && (
+                  <p className="mt-1 text-muted-foreground">
+                    No completion has been confirmed. Your draft is unchanged.
+                  </p>
+                )}
+              </div>
+            </div>
+            {unknownRequest && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="self-start"
+                disabled={aliasLoading || loading}
+                onClick={() => mutateAddress(unknownRequest, true)}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Retry request
+              </Button>
+            )}
+          </div>
+        )}
+        <div className="mb-4 grid gap-3 sm:grid-cols-3">
+          <EmailHealth label="DKIM" enabled={inboxStatus.dkimConfigured} />
+          <EmailHealth label="SPF" enabled={inboxStatus.spfConfigured} />
+          <EmailHealth label="DMARC" enabled={inboxStatus.dmarcConfigured} />
+        </div>
+
+        <div className="mb-4 grid gap-3 rounded-lg border border-border/60 bg-background/45 p-3 shadow-inner shadow-black/10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <form onSubmit={updatePrimaryEmail} className="grid gap-2">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <AtSign className="h-4 w-4 text-muted-foreground" />
+              Primary address
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <Input
+                aria-label="Primary email username"
+                value={primaryDraft}
+                onChange={(event) => setPrimaryDraft(sanitizeEmailUsername(event.target.value))}
+                placeholder="agent"
+                disabled={addressBlocked}
+              />
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={
+                  addressBlocked ||
+                  !primaryDraft.trim() ||
+                  !primaryDraftAddress ||
+                  primaryDraftAddress === primaryAddress.toLowerCase()
+                }
+              >
+                {aliasLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Pencil className="h-4 w-4" />
+                )}
+                Update
+              </Button>
+            </div>
+            <div className="wrap-anywhere text-xs text-muted-foreground">
+              {primaryDraftAddress || `${primaryDraft || 'hello'}@yourdomain.com`}
+            </div>
+          </form>
+
+          <form onSubmit={createAlias} className="grid gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <BadgePlus className="h-4 w-4 text-muted-foreground" />
+                Email aliases
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {aliasAddresses.length}/{aliasLimit}
+              </span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <Input
+                aria-label="Alias username"
+                value={aliasDraft}
+                onChange={(event) => setAliasDraft(sanitizeEmailUsername(event.target.value))}
+                placeholder={aliasLimit > 0 ? 'billing' : 'Upgrade for aliases'}
+                disabled={addressBlocked || aliasLimit === 0}
+              />
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={
+                  addressBlocked || aliasLimit === 0 || aliasSlotsLeft === 0 || !aliasDraft.trim()
+                }
+              >
+                {aliasLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <BadgePlus className="h-4 w-4" />
+                )}
+                Add
+              </Button>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {aliasLimit === 0
+                ? 'Aliases come with the Plus, Pro, Max and Enterprise plans.'
+                : aliasSlotsLeft > 0
+                  ? `${aliasSlotsLeft} alias slot${aliasSlotsLeft === 1 ? '' : 's'} available.`
+                  : 'Alias limit reached for this plan.'}
+            </div>
+            {aliasAddresses.length > 0 && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {aliasAddresses.map((address) => (
+                  <span
+                    key={address.emailAddress}
+                    className="inline-flex max-w-full items-center gap-2 rounded-full border border-border/70 bg-card/70 py-1 pl-3 pr-1 text-xs"
+                  >
+                    <span className="wrap-anywhere min-w-0">{address.emailAddress}</span>
+                    <button
+                      type="button"
+                      onClick={() => deleteAlias(address.emailAddress)}
+                      disabled={addressBlocked}
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      aria-label={`Remove ${address.emailAddress}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </form>
+        </div>
+
+        {signedIn && <EmailUsagePanel agentId={agentId} refreshKey={usageRevision} />}
+        {signedIn && <WebhookSettings agentId={agentId} />}
+
+        {composeOpen && (
+          <form
+            onSubmit={sendEmail}
+            className="mb-4 grid gap-3 rounded-lg border border-border/60 bg-background/55 p-3 sm:p-4"
+          >
+            <div className="grid gap-3 md:grid-cols-3">
+              <select
+                aria-label="From address"
+                value={form.fromAddress}
+                disabled={!emailFromCanReconcile(addressState) || sendLoading}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, fromAddress: event.target.value }))
+                }
+                className="min-h-10 w-full min-w-0 max-w-full rounded-md border border-input bg-background/70 px-3 py-2 font-mono text-sm shadow-[inset_0_1px_3px_rgba(20,21,18,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] focus-visible:border-primary/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2"
+              >
+                {!form.fromAddress && (
+                  <option value="">
+                    {activeAddresses.length ? 'Address awaiting verification' : 'No active address'}
+                  </option>
+                )}
+                {form.fromAddress &&
+                  !activeAddresses.some((entry) => entry.emailAddress === form.fromAddress) && (
+                    <option value={form.fromAddress} disabled>
+                      {form.fromAddress} (unavailable)
+                    </option>
+                  )}
+                {activeAddresses.map((address) => (
+                  <option key={address.emailAddress} value={address.emailAddress}>
+                    From {address.emailAddress}
+                  </option>
+                ))}
+              </select>
+              <Input
+                type="text"
+                value={form.to}
+                onChange={(event) => setForm((current) => ({ ...current, to: event.target.value }))}
+                placeholder="recipient@example.com"
+                required
+              />
+              <Input
+                type="text"
+                value={form.subject}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, subject: event.target.value }))
+                }
+                placeholder="Subject"
+                required
+              />
+            </div>
+            <textarea
+              value={form.text}
+              onChange={(event) => setForm((current) => ({ ...current, text: event.target.value }))}
+              placeholder="Message"
+              required
+              rows={5}
+              className="min-h-[140px] w-full rounded-md border border-input bg-background/70 px-3 py-2 text-sm shadow-[inset_0_1px_3px_rgba(20,21,18,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] placeholder:text-muted-foreground/70 focus-visible:border-primary/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2"
+            />
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" onClick={() => setComposeOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={sendLoading || !sendAllowed || aliasLoading}>
+                {sendLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                Send email
+              </Button>
+            </div>
+          </form>
+        )}
+
+        <div className="mb-4 flex flex-wrap gap-2 pb-1">
+          {(['all', 'inbound', 'outbound', 'unread'] as EmailDirection[]).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setFilter(item)}
+              className={cn(
+                'h-9 shrink-0 rounded-md border px-3 text-sm transition-colors',
+                filter === item
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border/70 bg-background/55 text-muted-foreground hover:bg-accent hover:text-foreground',
+              )}
+            >
+              {item[0].toUpperCase() + item.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="min-h-[260px] overflow-hidden rounded-lg border border-border/60 bg-background/40">
+            {loading ? (
+              <div className="flex h-[260px] items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="flex h-[260px] flex-col items-center justify-center px-4 text-center">
+                <Inbox className="mb-3 h-8 w-8 text-muted-foreground" />
+                <div className="text-sm text-muted-foreground">No messages found.</div>
+              </div>
+            ) : (
+              <div className="max-h-[420px] divide-y divide-border/50 overflow-y-auto">
+                {messages.map((message) => (
+                  <button
+                    key={message.id}
+                    type="button"
+                    onClick={() => setSelectedId(message.id)}
+                    className={cn(
+                      'block w-full p-3 text-left transition-colors hover:bg-accent/60',
+                      selectedMessage?.id === message.id && 'bg-accent/70',
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-medium">
+                            {message.subject || '(no subject)'}
+                          </span>
+                          {!message.read && (
+                            <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />
+                          )}
+                        </div>
+                        <div className="wrap-anywhere mt-1 font-mono text-xs text-muted-foreground">
+                          {message.direction === 'outbound'
+                            ? message.toAddress
+                            : message.fromAddress}
+                        </div>
+                      </div>
+                      <Badge variant={message.direction === 'outbound' ? 'outline' : 'secondary'}>
+                        {message.direction === 'outbound' ? message.status : message.direction}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                      {message.text || 'No preview available.'}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="min-h-[260px] rounded-lg border border-border/60 bg-background/40 p-3 sm:p-4">
+            {selectedMessage ? (
+              <div className="flex h-full flex-col">
+                <div className="flex flex-col gap-3 border-b border-border/50 pb-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="wrap-anywhere font-semibold">
+                      {selectedMessage.subject || '(no subject)'}
+                    </h3>
+                    <div className="mt-2 grid gap-1 font-mono text-xs text-muted-foreground">
+                      <span className="wrap-anywhere">From {selectedMessage.fromAddress}</span>
+                      {selectedMessage.toAddress && (
+                        <span className="wrap-anywhere">To {selectedMessage.toAddress}</span>
+                      )}
+                      <span>{formatDate(new Date(selectedMessage.receivedAt))}</span>
+                      {selectedMessage.direction === 'outbound' && (
+                        <span>Status {selectedMessage.status}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex w-full items-center gap-2 sm:w-auto">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => updateRead(selectedMessage, !selectedMessage.read)}
+                      className="min-w-0 flex-1 sm:flex-none"
+                    >
+                      <MailCheck className="h-4 w-4" />
+                      {selectedMessage.read ? 'Mark unread' : 'Mark read'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      title="Delete email"
+                      aria-label="Delete email"
+                      onClick={() => void deleteMessage(selectedMessage)}
+                      disabled={deletingMessageId === selectedMessage.id}
+                      className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      {deletingMessageId === selectedMessage.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      title="Close email"
+                      aria-label="Close email"
+                      onClick={() => setSelectedId(null)}
+                      className="shrink-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {selectedMessage.lastError && (
+                  <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                    {selectedMessage.lastError}
+                  </div>
+                )}
+
+                {selectedMessage.verificationCodes.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Verification codes
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedMessage.verificationCodes.map((code) => (
+                        <span
+                          key={code}
+                          className="rounded-md bg-background px-2 py-1 font-mono text-sm"
+                        >
+                          {code}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <pre className="wrap-anywhere mt-4 flex-1 whitespace-pre-wrap rounded-lg bg-background/55 p-3 text-sm leading-6 text-foreground">
+                  {selectedMessage.text || 'No plain text body available.'}
+                </pre>
+              </div>
+            ) : (
+              <div className="flex h-full min-h-[230px] items-center justify-center text-sm text-muted-foreground">
+                Select an email.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-border/60 bg-background/45 p-3 sm:p-4">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 font-medium">
+              <Ban className="h-4 w-4 text-muted-foreground" />
+              Blocklist
+            </div>
+            {blockLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+          </div>
+          <form onSubmit={addBlocklist} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <Input
+              value={blockValue}
+              onChange={(event) => setBlockValue(event.target.value)}
+              placeholder="email or domain"
+            />
+            <Button type="submit" variant="outline" disabled={blockLoading || !blockValue.trim()}>
+              Block
+            </Button>
+          </form>
+          {blocklist.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {blocklist.map((entry) => (
+                <span
+                  key={entry.id}
+                  className="inline-flex max-w-full items-center gap-2 rounded-full border border-border/70 bg-card/70 py-1 pl-3 pr-1 text-xs"
+                >
+                  <span className="wrap-anywhere min-w-0">{entry.value}</span>
+                  <button
+                    type="button"
+                    onClick={() => deleteBlock(entry.id)}
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    aria-label={`Remove ${entry.value}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function WebhookSettings({ agentId }: { agentId: string }) {
+  const { sessionEnded } = useManagementSession();
+  const unauthorized = (res: Response) => {
+    if (res.status !== 401) return false;
+    sessionEnded();
+    return true;
+  };
+  const [url, setUrl] = useState('');
+  const [mode, setMode] = useState<'metadata' | 'inline_text'>('metadata');
+  const [enabled, setEnabled] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [secret, setSecret] = useState<string | null>(null);
+  useEffect(() => {
+    fetch(`/api/v1/agents/${agentId}/email/webhook`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.webhook) {
+          setUrl(data.webhook.url);
+          setMode(data.webhook.payloadMode);
+          setEnabled(data.webhook.enabled);
+        }
+      })
+      .catch(() => undefined);
+  }, [agentId]);
+  async function save() {
+    setSaving(true);
+    setSecret(null);
+    try {
+      const res = await fetch(`/api/v1/agents/${agentId}/email/webhook`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url, payloadMode: mode, enabled }),
+      });
+      if (unauthorized(res)) return;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? data.code ?? 'Webhook save failed');
+      if (data.signingSecret) setSecret(data.signingSecret);
+      toast.success('Inbound webhook saved');
+    } catch {
+      toast.error('Couldn’t save the webhook', {
+        description: 'Check the URL is HTTPS and reachable, then try again.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function rotate() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/v1/agents/${agentId}/email/webhook`, {
+        method: 'PATCH',
+        credentials: 'include',
+      });
+      if (unauthorized(res)) return;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.code ?? 'Rotation failed');
+      setSecret(data.signingSecret);
+      toast.success('Signing secret rotated');
+    } catch {
+      toast.error('Couldn’t rotate the signing secret', {
+        description: 'The current secret still works. Try again in a moment.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="mb-4 grid gap-3 rounded-lg border border-border/60 bg-background/45 p-3 sm:p-4">
+      <div>
+        <div className="text-sm font-medium">Inbound webhook</div>
+        <p className="text-xs text-muted-foreground">
+          Signed email.received events with delivery retries.
+        </p>
+      </div>
+      <Input
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        placeholder="https://example.com/webhooks/email"
+        type="url"
+      />
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value as typeof mode)}
+          className="h-10 min-w-0 max-w-full rounded-md border border-input bg-background px-3 text-sm"
+        >
+          <option value="metadata">Metadata + content URL</option>
+          <option value="inline_text">Include plain text up to 256KB</option>
+        </select>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          Enabled
+        </label>
+        <Button type="button" onClick={save} disabled={saving || !url}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
+        </Button>
+        <Button type="button" variant="outline" onClick={rotate} disabled={saving || !url}>
+          Rotate secret
+        </Button>
+      </div>
+      {secret && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+          <div className="text-xs font-medium">
+            Copy this signing secret now. It will not be shown again.
+          </div>
+          <code className="wrap-anywhere mt-1 block text-xs">{secret}</code>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmailUsagePanel({ agentId, refreshKey }: { agentId: string; refreshKey: number }) {
+  const [usage, setUsage] = useState<{
+    used: number;
+    limit: number;
+    sent: number;
+    received: number;
+    remaining: number;
+    cycleEnd: string;
+    requestsPerSecond: number;
+  } | null>(null);
+  useEffect(() => {
+    fetch(`/api/v1/agents/${agentId}/email/usage`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setUsage)
+      .catch(() => undefined);
+  }, [agentId, refreshKey]);
+  if (!usage) return null;
+  const percent = Math.min(100, Math.round((usage.used / Math.max(1, usage.limit)) * 100));
+  return (
+    <div className="mb-4 grid gap-2 rounded-lg border border-border/60 bg-background/45 p-3 sm:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-medium">Monthly email usage</div>
+        <div className="text-xs text-muted-foreground">
+          {usage.requestsPerSecond} API requests/second
+        </div>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div className="h-full bg-primary" style={{ width: `${percent}%` }} />
+      </div>
+      <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+        <span>
+          {usage.used.toLocaleString()} / {usage.limit.toLocaleString()} combined
+        </span>
+        <span>
+          Sent {usage.sent.toLocaleString()} · Received {usage.received.toLocaleString()}
+        </span>
+        <span>Resets {new Date(usage.cycleEnd).toLocaleDateString()}</span>
+      </div>
+    </div>
+  );
+}
+
+function EmailHealth({ label, enabled }: { label: string; enabled: boolean }) {
+  return (
+    <div className="flex min-h-[70px] items-center gap-3 rounded-lg border border-border/60 bg-background/55 p-3">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+        {enabled ? (
+          <CheckCircle2 className="h-4 w-4 text-green-800" />
+        ) : (
+          <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+        )}
+      </div>
+      <div>
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+        <div className="text-sm font-medium">{enabled ? 'Configured' : 'Pending'}</div>
+      </div>
+    </div>
+  );
+}
+
+function sanitizeEmailUsername(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9._+-]/g, '')
+    .slice(0, 64);
+}
+
+function readLocalPart(emailAddress: string): string {
+  return emailAddress.split('@')[0] ?? 'hello';
+}
+
+function readDomainPart(emailAddress: string): string {
+  return emailAddress.split('@')[1] ?? '';
+}

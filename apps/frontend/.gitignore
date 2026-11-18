@@ -1,0 +1,19 @@
+node_modules/
+.next/
+.open-next/
+.wrangler/
+.turbo/
+.qa/
+*.tsbuildinfo
+next-env.d.ts
+cloudflare-env.d.ts
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example
+frontend.env
+
+# Generated from the repository brand/ directory by scripts/sync-brand.ts; never edit or commit.
+/public/brand/
+/public/favicon.ico

@@ -1,0 +1,37 @@
+{
+  "assets": {
+    "mark": "/brand/logo/opensignet-logo.svg",
+    "markPng": "/brand/logo/opensignet-logo.png",
+    "markDark": "/brand/logo/opensignet-logo-dark.svg",
+    "markDarkPng": "/brand/logo/opensignet-logo-dark.png",
+    "transparentMark": "/brand/logo/opensignet-mark-transparent.png",
+    "stackedWordmark": "/brand/wordmark/opensignet-wordmark-stacked.png",
+    "horizontalWordmark": "/brand/wordmark/opensignet-wordmark-horizontal.png",
+    "circleMark": "/brand/logo/opensignet-logo-circle.png",
+    "circleMarkMini": "/brand/logo/opensignet-logo-circle-padded.png",
+    "favicon16": "/brand/icons/favicon-16.png",
+    "favicon32": "/brand/icons/favicon-32.png",
+    "favicon": "/brand/icons/favicon-96.png",
+    "faviconIco": "/favicon.ico",
+    "appleTouchIcon": "/brand/icons/apple-touch-icon-180.png",
+    "appIcon192": "/brand/icons/icon-192.png",
+    "appIcon": "/brand/logo/sizes/opensignet-logo-0256.png",
+    "appIcon512": "/brand/icons/icon-512.png",
+    "socialCard": "/brand/social/opensignet-social-card.jpg",
+    "socialCardOriginal": "/brand/social/opensignet-social-card.png",
+    "socialBanner": "/brand/social/opensignet-x-banner.png",
+    "faviconSvg": "/brand/icons/favicon.svg",
+    "favicon48": "/brand/icons/favicon-48.png",
+    "maskableIcon": "/brand/icons/icon-maskable-512.png"
+  },
+  "socialImage": {
+    "width": 1731,
+    "height": 908,
+    "alt": "OpenSignet logo and wordmark with the line: The agent-native identity and communications infrastructure.",
+    "type": "image/jpeg"
+  },
+  "aliases": {
+    "/apple-touch-icon.png": "appleTouchIcon",
+    "/apple-touch-icon-precomposed.png": "appleTouchIcon"
+  }
+}

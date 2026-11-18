@@ -1,0 +1,291 @@
+/* eslint-disable @next/next/no-html-link-for-pages -- Public pages use full navigation to avoid shipping router JavaScript. */
+
+import type { Metadata } from 'next';
+import { LegalDocument, LegalList, type LegalSection } from '@/components/legal/legal-document';
+import { CONTACT } from '@/lib/contact';
+import { createPageMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = createPageMetadata({
+  title: 'Terms of Service',
+  description:
+    'The agreement for using OpenSignet: accounts and sign-in, the self-custodial wallet, domains, DNS and email, plans and payments, renewals and acceptable use.',
+  path: '/terms',
+});
+
+const sections: readonly LegalSection[] = [
+  {
+    id: 'agreement',
+    title: 'The agreement',
+    body: (
+      <>
+        <p>
+          These terms are an agreement between you and OpenSignet for the use of opensignet.com, our
+          APIs, SDKs, MCP server and every related service (together, the “Service”). OpenSignet is
+          the agent-native identity and communications infrastructure: it provides domains, onchain
+          names, DNS, email, identity and payments for people, developers and the AI agents they
+          operate.
+        </p>
+        <p>
+          By creating an account or using the Service you accept these terms and our{' '}
+          <a href="/privacy">Privacy Policy</a>. If you use the Service for an organization, you
+          confirm that you may accept these terms on its behalf.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'account',
+    title: 'Your account',
+    body: (
+      <>
+        <p>
+          You can sign in with Google, with a one-time code sent to your email, or with a wallet.
+          There is one account per person: methods that share a verified email address, Google
+          account or wallet reach the same account, and accounts are never merged.
+        </p>
+        <LegalList
+          items={[
+            'You must be at least 18 years old and able to enter a binding contract.',
+            'Give accurate information and add only email addresses and wallets that you control.',
+            'Keep your email account, Google account, wallets and devices secure. Activity from a signed-in session is treated as yours.',
+            'Tell us promptly if you believe your account has been accessed without permission.',
+          ]}
+        />
+        <p>
+          OpenSignet will never ask for your private key, recovery phrase, passkey or one-time code.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'wallet',
+    title: 'Your OpenSignet wallet',
+    body: (
+      <>
+        <p>
+          Your account can include a self-custodial wallet on Base. Its private key is created on
+          your device and locked with your passkeys. We store only the locked copy, which we cannot
+          open.
+        </p>
+        <LegalList
+          items={[
+            <>
+              <strong>Only you control it.</strong> We cannot view, move, freeze or recover your
+              funds, and we cannot reset your passkeys.
+            </>,
+            <>
+              <strong>Keep a backup.</strong> Add a backup passkey and keep any recovery materials
+              we offer safe. If you lose every way to unlock the wallet, its funds cannot be
+              recovered.
+            </>,
+            <>
+              <strong>Transactions are final.</strong> Blockchain transfers cannot be reversed.
+              Check every address and amount before you approve.
+            </>,
+            <>
+              <strong>Export is yours to protect.</strong> You can export the private key at any
+              time. Anyone who obtains it controls the wallet.
+            </>,
+          ]}
+        />
+        <p>
+          OpenSignet is not a bank, and wallet balances are not deposits. Move all funds out before
+          you delete your account.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'services',
+    title: 'Domains, names, DNS and email',
+    body: (
+      <>
+        <p>
+          Domain names are registered through accredited registrars and are subject to the rules of
+          their registry, the registrar’s terms and ICANN policies, including the Uniform
+          Domain-Name Dispute-Resolution Policy. Registration requires the contact information those
+          rules require.
+        </p>
+        <LegalList
+          items={[
+            'A name is yours only once its registration is confirmed. Availability and price can change until then.',
+            'Onchain names such as Basenames and ENS names live on public blockchains and follow those protocols’ rules.',
+            'You are responsible for the DNS records you publish and the mail you send and receive.',
+          ]}
+        />
+      </>
+    ),
+  },
+  {
+    id: 'payments',
+    title: 'Plans, payments and refunds',
+    body: (
+      <>
+        <p>
+          Prices are shown before you pay. Plans apply to your whole account and are billed monthly
+          or yearly, as you choose. You can pay by card through our payment processor or in USDC on
+          Base. Prices exclude taxes unless stated otherwise.
+        </p>
+        <p>
+          Payments are final once provisioning or third-party work has begun, because registry fees
+          and blockchain transfers cannot be reversed. A payment is refunded when OpenSignet marks
+          it refund eligible, for example after a registration that could not be completed, or when
+          the law requires it. A refund is a new transaction and does not reverse the original
+          payment.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'renewals',
+    title: 'Renewals and expiry',
+    body: (
+      <>
+        <p>
+          Domains, names and plans run for the period you pay for. When you turn on automatic
+          renewal, you authorize OpenSignet to collect the renewal price from the payment source you
+          set up, within the limits you approved, shortly before the end of each period. You can
+          turn it off at any time.
+        </p>
+        <p>
+          If a renewal is off or cannot be paid, the service expires at the end of its period. An
+          expired domain can be lost to another registrant, and the mail, DNS and identity linked to
+          it stop working.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'acceptable-use',
+    title: 'Acceptable use',
+    body: (
+      <>
+        <p>You and the agents you operate must not use the Service to:</p>
+        <LegalList
+          items={[
+            'send spam or any unsolicited bulk message;',
+            'run phishing, fraud, malware or impersonation of any person or organization;',
+            'publish or transmit unlawful content or infringe the rights of others;',
+            'probe, overload or disrupt the Service, or bypass its limits and security controls;',
+            'create accounts in bulk or by automated means other than our documented APIs.',
+          ]}
+        />
+        <p>
+          We monitor bounce and complaint rates and may limit sending, suspend a service or remove
+          content to stop abuse, usually after notice but immediately when the risk is serious.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'developers',
+    title: 'APIs, keys and agents',
+    body: (
+      <>
+        <p>
+          API keys act with your account’s authority. Keep them secret, give each agent only the
+          keys it needs, and revoke a key as soon as you suspect it is exposed. You are responsible
+          for every action taken with your keys and by the agents you operate.
+        </p>
+        <p>
+          Our public SDKs, MCP server and plugins are open source under the Apache License 2.0. That
+          license governs the code; these terms govern the hosted Service.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'content',
+    title: 'Your content',
+    body: (
+      <p>
+        You keep ownership of the content you store or send through the Service, such as DNS
+        records, messages and profile details. You give us permission to host, process and transmit
+        it only as needed to run the Service for you.
+      </p>
+    ),
+  },
+  {
+    id: 'termination',
+    title: 'Suspension and closing your account',
+    body: (
+      <>
+        <p>
+          You can delete your account at any time in Settings. Before you do, move your wallet funds
+          and transfer anything you want to keep, such as domains or mail. Deletion cannot be
+          undone.
+        </p>
+        <p>
+          We may suspend or close an account that breaches these terms, puts other users or the
+          Service at risk, or where the law requires it. Where we can, we will tell you why and give
+          you a chance to export your data.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'disclaimers',
+    title: 'Disclaimers',
+    body: (
+      <>
+        <p>
+          The Service is provided “as is” and “as available”. We work to keep it secure and reliable
+          but do not promise that it will be uninterrupted or error-free.
+        </p>
+        <p>
+          Public blockchains, smart contracts, registries and wallet software are operated by others
+          and carry their own risks, including software defects, network congestion, changing fees
+          and changes in law. We are not responsible for their operation.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'liability',
+    title: 'Limitation of liability',
+    body: (
+      <p>
+        To the extent the law allows, OpenSignet is not liable for indirect, incidental, special or
+        consequential losses, or for lost profits, data or digital assets. Our total liability for
+        any claim relating to the Service is limited to the amount you paid us in the 12 months
+        before the claim. Nothing in these terms limits liability that cannot be limited by law.
+      </p>
+    ),
+  },
+  {
+    id: 'changes',
+    title: 'Changes to these terms',
+    body: (
+      <p>
+        We may update these terms as the Service develops. We will tell you about material changes
+        by email or in the product before they take effect. If you keep using the Service after
+        that, the updated terms apply.
+      </p>
+    ),
+  },
+  {
+    id: 'contact',
+    title: 'Contact',
+    body: (
+      <p>
+        Questions about these terms can be sent to{' '}
+        <a href={`mailto:${CONTACT.legal}`}>{CONTACT.legal}</a>. To report a security issue, follow
+        the instructions on our <a href="/support">Support</a> page.
+      </p>
+    ),
+  },
+];
+
+export default function TermsPage() {
+  return (
+    <LegalDocument
+      path="/terms"
+      title="Terms of Service"
+      summary="The agreement for using OpenSignet: your account, your wallet, the services you register, how payments and renewals work, and the rules that keep the network safe."
+      effective="2026-11-17"
+      sections={sections}
+      related={{ href: '/privacy', label: 'Read the Privacy Policy' }}
+      contact={CONTACT.legal}
+    />
+  );
+}

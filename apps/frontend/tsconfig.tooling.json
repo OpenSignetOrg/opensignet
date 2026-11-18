@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "incremental": false,
+    "plugins": []
+  },
+  "include": ["next-env.d.ts", "*.config.ts", "scripts/**/*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", ".next", ".open-next", ".qa"]
+}

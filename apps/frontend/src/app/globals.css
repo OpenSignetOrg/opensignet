@@ -1,0 +1,421 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 48 16% 92%;
+    --foreground: 90 5% 12%;
+    --card: 45 24% 96%;
+    --card-foreground: 90 5% 12%;
+    --popover: 45 27% 97%;
+    --popover-foreground: 90 5% 12%;
+    --primary: 90 5% 12%;
+    --primary-foreground: 45 31% 96%;
+    --secondary: 48 16% 88%;
+    --secondary-foreground: 90 5% 14%;
+    --muted: 48 15% 88%;
+    --muted-foreground: 75 5% 39%;
+    --accent: 46 18% 86%;
+    --accent-foreground: 90 5% 12%;
+    --destructive: 5 62% 42%;
+    --destructive-foreground: 45 31% 96%;
+    --border: 48 12% 76%;
+    --input: 48 12% 78%;
+    --ring: 22 92% 53%;
+    --radius: 0.5rem;
+    --brand-cyan: 188 26% 43%;
+    --brand-blue: 92 5% 20%;
+    --brand-emerald: 143 28% 32%;
+    --brand-amber: 32 96% 55%;
+    --brand-orange: 22 95% 52%;
+    /* Code cards, shared with the documentation: #fbfaf6 body, #f1efe8 header. */
+    --code-bg: 48 41% 97.6%;
+    --code-header: 45 22% 93%;
+  }
+
+  .dark {
+    --background: 48 16% 92%;
+    --foreground: 90 5% 12%;
+    --card: 45 24% 96%;
+    --card-foreground: 90 5% 12%;
+    --popover: 45 27% 97%;
+    --popover-foreground: 90 5% 12%;
+    --primary: 90 5% 12%;
+    --primary-foreground: 45 31% 96%;
+    --secondary: 48 16% 88%;
+    --secondary-foreground: 90 5% 14%;
+    --muted: 48 15% 88%;
+    --muted-foreground: 75 5% 39%;
+    --accent: 46 18% 86%;
+    --accent-foreground: 90 5% 12%;
+    --destructive: 5 62% 42%;
+    --destructive-foreground: 45 31% 96%;
+    --border: 48 12% 76%;
+    --input: 48 12% 78%;
+    --ring: 22 92% 53%;
+    --code-bg: 48 41% 97.6%;
+    --code-header: 45 22% 93%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    /* Mobile browsers flash a blue box on tap; every control has its own pressed state instead. */
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1,
+      'ss01' 1;
+    min-height: 100dvh;
+    overflow-x: clip;
+    background: linear-gradient(
+      180deg,
+      hsl(46 20% 94%) 0%,
+      hsl(48 16% 91%) 48%,
+      hsl(42 14% 88%) 100%
+    );
+    color-scheme: light;
+  }
+  html {
+    scroll-behavior: smooth;
+    overflow-x: clip;
+    /* Reserve the scrollbar so opening a modal dialog causes no layout shift. */
+    scrollbar-gutter: stable;
+  }
+  /* In-page targets clear the sticky header (4rem) with breathing room. */
+  [id] {
+    scroll-margin-top: 5rem;
+  }
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+  ::selection {
+    background: hsl(var(--brand-orange) / 0.24);
+    color: hsl(var(--foreground));
+  }
+  :focus-visible {
+    outline-color: hsl(var(--primary));
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  *::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: hsl(var(--border));
+    background-clip: content-box;
+  }
+}
+
+/* Page gutters: the header lockup and every content column share this inset. */
+@layer components {
+  @media (min-width: 768px) {
+    .container {
+      padding-inline: 1.5rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .container {
+      padding-inline: 2rem;
+    }
+  }
+  @media (min-width: 1280px) {
+    .container {
+      padding-inline: 2.5rem;
+    }
+  }
+}
+
+/* Custom utilities */
+@layer utilities {
+  .opensignet-wallet-backdrop {
+    background-color: hsl(var(--background) / 0.6);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  .defer-offscreen {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 900px;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+  .grid-pattern {
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.3) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.24) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+  .glow {
+    box-shadow:
+      0 0 0 1px hsl(var(--border) / 0.8),
+      0 24px 58px -42px hsl(90 5% 12% / 0.45);
+  }
+  .premium-shell {
+    background:
+      linear-gradient(180deg, hsl(45 25% 96% / 0.96), hsl(48 16% 91% / 0.94)),
+      linear-gradient(to right, hsl(var(--border) / 0.26) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.2) 1px, transparent 1px);
+    background-size:
+      auto,
+      34px 34px,
+      34px 34px;
+  }
+  .hero-premium-shell {
+    /* Fades into the page background, so the hero never reads as a separate band. */
+    background:
+      linear-gradient(180deg, hsl(45 26% 96%), hsl(var(--background)) 78%),
+      linear-gradient(120deg, hsl(var(--brand-orange) / 0.045), transparent 42%);
+  }
+  .premium-surface {
+    border-color: hsl(var(--border) / 0.9);
+    background: linear-gradient(180deg, hsl(45 27% 97% / 0.96), hsl(45 20% 93% / 0.92));
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.84),
+      inset 0 -1px 0 hsl(90 5% 12% / 0.04),
+      0 18px 42px -34px hsl(90 5% 12% / 0.48);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .premium-elevated {
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.9),
+      inset 0 -1px 0 hsl(90 5% 12% / 0.04),
+      0 28px 70px -46px hsl(90 5% 12% / 0.5),
+      0 1px 0 hsl(0 0% 100% / 0.8);
+  }
+  .premium-border {
+    border-color: hsl(var(--border) / 0.9);
+  }
+  .code-surface {
+    border-color: hsl(var(--border) / 0.92);
+    background: linear-gradient(180deg, hsl(45 24% 96% / 0.98), hsl(48 14% 89% / 0.98));
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.86),
+      inset 0 -1px 0 hsl(90 5% 12% / 0.05),
+      0 24px 60px -46px hsl(90 5% 12% / 0.52);
+  }
+  .interactive-surface {
+    transition:
+      border-color 180ms ease,
+      background-color 180ms ease,
+      transform 180ms ease,
+      box-shadow 180ms ease;
+  }
+  .interactive-surface:hover {
+    transform: translateY(-1px);
+    border-color: hsl(var(--brand-orange) / 0.52);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.9),
+      0 24px 58px -44px hsl(90 5% 12% / 0.52);
+  }
+  .safe-x {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .mobile-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .wrap-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .touch-target {
+    min-height: 44px;
+  }
+  .table-mobile-stack {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .tracking-tight {
+    letter-spacing: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .premium-surface,
+  .backdrop-blur-sm,
+  .backdrop-blur,
+  .backdrop-blur-md,
+  .backdrop-blur-xl {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .premium-surface {
+    background: linear-gradient(180deg, hsl(45 27% 97%), hsl(45 20% 93%));
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.82),
+      0 10px 24px -22px hsl(90 5% 12% / 0.4) !important;
+  }
+
+  .premium-elevated {
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.86),
+      0 14px 30px -24px hsl(90 5% 12% / 0.42) !important;
+  }
+
+  .interactive-surface {
+    transition:
+      border-color 140ms ease,
+      background-color 140ms ease;
+  }
+
+  body[data-opensignet-wallet-dialog-open='true'] [data-opensignet-mobile-nav='true'] {
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .interactive-surface:hover {
+    transform: none;
+  }
+}
+
+/*
+ * Sticky header. At rest it shares the hero's top tone and sits flush on a hairline, so neither
+ * surface reads as raised or sunken. Once the page scrolls, a soft shadow fades in over the first
+ * 48px so the header reads as floating above the content. Browsers without scroll-driven
+ * animations keep the flush hairline, which is correct at the top of the page.
+ */
+header.opensignet-sticky-header {
+  background-color: hsl(45 26% 96% / 0.94);
+  box-shadow: 0 0 0 0 transparent;
+}
+
+@media (min-width: 768px) {
+  header.opensignet-sticky-header {
+    background-color: hsl(45 26% 96% / 0.84);
+  }
+}
+
+@supports (animation-timeline: scroll()) {
+  header.opensignet-sticky-header {
+    animation: opensignet-header-elevate linear both;
+    animation-timeline: scroll(root block);
+    animation-range: 0 48px;
+  }
+}
+
+@keyframes opensignet-header-elevate {
+  to {
+    box-shadow: 0 10px 30px -24px hsl(90 5% 12% / 0.42);
+  }
+}
+
+/* Agent onboarding dialog: a bottom sheet on phones, a centred panel from 640px. */
+html:has(dialog[open]) {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .agent-onboarding-dialog[open] {
+    animation: agent-sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (min-width: 640px) {
+  .agent-onboarding-dialog[open] {
+    animation-name: agent-dialog-in;
+  }
+}
+
+/* Slim scrollbar inside the site-search results: no arrow buttons, rounded thumb. */
+/* The site-wide standard scrollbar properties would override these in Chrome (and show arrow
+   buttons on Windows), so the results list opts out of them. */
+.site-search-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+.site-search-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+.site-search-scroll::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+}
+.site-search-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.site-search-scroll::-webkit-scrollbar-thumb {
+  border: 4px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: hsl(var(--border));
+}
+.site-search-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.45);
+}
+@supports not selector(::-webkit-scrollbar) {
+  .site-search-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .site-search-dialog[open] {
+    animation: site-search-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}
+
+@keyframes site-search-in {
+  from {
+    transform: translateY(-6px) scale(0.985);
+    opacity: 0;
+  }
+}
+
+@keyframes agent-sheet-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+
+@keyframes agent-dialog-in {
+  from {
+    transform: translateY(8px) scale(0.985);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
