@@ -1,0 +1,73 @@
+{
+  "name": "@opensignet/mcp-server",
+  "version": "0.1.0",
+  "description": "Secure-by-default MCP server for OpenSignet agent-native identity and communications APIs and renewal workflows",
+  "keywords": [
+    "opensignet",
+    "ai-agents",
+    "mcp",
+    "model-context-protocol",
+    "identity",
+    "x402",
+    "base"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenSignetOrg/opensignet.git",
+    "directory": "packages/mcp-server"
+  },
+  "homepage": "https://docs.opensignet.com/sdk/mcp",
+  "bugs": {
+    "url": "https://github.com/OpenSignetOrg/opensignet/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "opensignet-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "examples/crewai/readonly_flow.py",
+    "examples/crewai/README.md",
+    "examples/crewai/requirements.in",
+    "examples/crewai/requirements.lock",
+    "examples/autogen/opensignet_workbench.py",
+    "examples/autogen/assistant_example.py",
+    "examples/autogen/inspect_renewal.py",
+    "examples/autogen/README.md",
+    "examples/autogen/requirements.txt",
+    "examples/autogen/constraints.txt",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "package.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "pnpm run build",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "pnpm --filter @opensignet/sdk build && pnpm run build && node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@opensignet/sdk": "workspace:^",
+    "@opensignet/shared": "workspace:^",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "viem": "^2.56.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.23.13",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "include": [
+    "readonly_flow.py",
+    "../../test/crewai-integration.py",
+    "../../test/crewai-package.py",
+    "../../../crewai-plugin/src/opensignet_crewai"
+  ],
+  "extraPaths": [".", "../../../crewai-plugin/src"],
+  "venvPath": ".",
+  "venv": ".venv-native",
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic"
+}
