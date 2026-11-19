@@ -78,7 +78,7 @@ export const PRICING_FAQS: readonly FaqItem[] = [
   {
     question: 'How do I pay?',
     answer:
-      'Plans can be paid by card through Stripe or in USDC on Base. Domain registration is paid in USDC on Base. Checkout always shows the exact total, and nothing is charged until you approve the payment.',
+      'Plans are paid in USDC on Base, from your OpenSignet wallet or any other wallet. Card payments through Stripe are coming soon. Domain registration is paid in USDC on Base. Checkout always shows the exact total, and nothing is charged until you approve the payment.',
   },
   {
     question: 'Are plans billed monthly or yearly?',

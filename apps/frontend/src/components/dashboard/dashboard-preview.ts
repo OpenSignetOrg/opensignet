@@ -27,6 +27,7 @@ export const DASHBOARD_PREVIEW: DashboardPreview = {
     currentPeriodEnd: at(201),
     cancelAtPeriodEnd: false,
     paymentMethod: 'card',
+    scheduled: null,
   },
   agents: [
     {

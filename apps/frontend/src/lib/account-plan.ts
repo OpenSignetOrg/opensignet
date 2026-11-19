@@ -29,7 +29,18 @@ export const accountPlanSchema = z
     currentPeriodEnd: isoDate.nullable(),
     /** The plan ends at `currentPeriodEnd` instead of renewing. */
     cancelAtPeriodEnd: z.boolean(),
-    paymentMethod: z.enum(['card', 'crypto']).nullable(),
+    /** Card renews on Stripe; crypto and wallet plans are paid in USDC. */
+    paymentMethod: z.enum(['card', 'crypto', 'wallet']).nullable(),
+    /** A change that starts at the next renewal (a downgrade, or a new payment method). */
+    scheduled: z
+      .object({
+        sku: z.string().max(40),
+        period: z.enum(['monthly', 'yearly']),
+        paymentMethod: z.enum(['card', 'crypto', 'wallet']),
+        startsAt: isoDate,
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 export type AccountPlan = z.infer<typeof accountPlanSchema>;

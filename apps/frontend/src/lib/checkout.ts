@@ -3,8 +3,8 @@ import { ENTERPRISE_PLAN_OFFERS, SERVICE_PLAN_CATALOG } from '@opensignet/shared
 import type { ServicePlanSku } from '@opensignet/shared';
 
 /**
- * Plan checkout for the whole account: card through Stripe Checkout, or crypto (USDC on Base,
- * approved in the wallet through x402).
+ * Plan checkout for the whole account: card through Stripe Checkout, USDC on Base from any wallet
+ * (x402), or USDC from the account's own OpenSignet wallet (approved with the wallet vault).
  *
  * Security rules this module enforces on the client:
  * - Only known plans and billing periods are accepted from the address bar; anything else is
@@ -19,7 +19,7 @@ import type { ServicePlanSku } from '@opensignet/shared';
 
 export type BillingPeriod = 'monthly' | 'yearly';
 export type PaidPlanKey = 'plus' | 'pro' | 'max' | 'enterprise';
-export type CheckoutMethod = 'card' | 'crypto';
+export type CheckoutMethod = 'card' | 'crypto' | 'wallet';
 
 export interface CheckoutSelection {
   plan: PaidPlanKey;
@@ -138,7 +138,16 @@ const checkoutStatusSchema = z.object({
 
 export type CheckoutStatusResult = z.infer<typeof checkoutStatusSchema>;
 
-export type CheckoutErrorKind = 'signin' | 'invalid' | 'conflict' | 'unavailable';
+export type CheckoutErrorKind =
+  | 'signin'
+  | 'invalid'
+  | 'conflict'
+  | 'unavailable'
+  | 'card'
+  | 'funds'
+  | 'expired'
+  | 'payment'
+  | 'wallet_not_ready';
 
 /** Plain-language checkout failures; never shows codes or server text. */
 export class CheckoutError extends Error {
@@ -156,13 +165,46 @@ export const CHECKOUT_ERROR_COPY: Record<CheckoutErrorKind, string> = {
   conflict:
     'A payment for this plan is already in progress. Wait a moment, then check your dashboard.',
   unavailable: 'Payments are not available right now. Nothing was charged. Please try again later.',
+  card: 'Card payments are coming soon. You can pay with USDC today.',
+  funds:
+    'Your OpenSignet wallet doesn’t hold enough USDC. Add USDC on Base to its address, then try again.',
+  expired: 'This payment window expired before it was paid. Nothing was charged. Start again.',
+  payment: 'The payment approval didn’t match this checkout. Nothing was charged. Try again.',
+  wallet_not_ready: 'Your OpenSignet wallet is still being set up. Try again in a moment.',
 };
 
-function errorForStatus(status: number): CheckoutError {
+/** Maps the server's error code (or, failing that, the status) to a plain-language error. */
+function errorFor(status: number, code: unknown): CheckoutError {
+  switch (code) {
+    case 'card_unavailable':
+      return new CheckoutError('card');
+    case 'insufficient_funds':
+      return new CheckoutError('funds');
+    case 'checkout_expired':
+      return new CheckoutError('expired');
+    case 'invalid_payment':
+      return new CheckoutError('payment');
+    case 'in_progress':
+      return new CheckoutError('conflict');
+  }
   if (status === 401 || status === 403) return new CheckoutError('signin');
   if (status === 400 || status === 422) return new CheckoutError('invalid');
   if (status === 409) return new CheckoutError('conflict');
   return new CheckoutError('unavailable');
+}
+
+async function errorFrom(response: Response): Promise<CheckoutError> {
+  let code: unknown;
+  try {
+    code = ((await response.clone().json()) as { error?: unknown }).error;
+  } catch {
+    code = undefined;
+  }
+  return errorFor(response.status, code);
+}
+
+function errorForStatus(status: number): CheckoutError {
+  return errorFor(status, undefined);
 }
 
 export function createIdempotencyKey(): string {
@@ -219,7 +261,7 @@ export async function startCardCheckout(
   fetcher: Fetcher = fetch,
 ): Promise<{ checkoutId: string; checkoutUrl: string }> {
   const response = await post(fetcher, requestBody(selection, 'card'), idempotencyKey);
-  if (!response.ok) throw errorForStatus(response.status);
+  if (!response.ok) throw await errorFrom(response);
   const parsed = cardStartSchema.safeParse(await readJson(response));
   if (!parsed.success) throw new CheckoutError('unavailable');
   return { checkoutId: parsed.data.checkoutId, checkoutUrl: parsed.data.checkoutUrl };
@@ -239,14 +281,161 @@ export async function startCryptoCheckout(
   const initial = await post(fetcher, body, idempotencyKey);
   if (initial.status !== 402) {
     // A paid checkout is never expected without a payment signature.
-    throw errorForStatus(initial.ok ? 500 : initial.status);
+    throw initial.ok ? errorForStatus(500) : await errorFrom(initial);
   }
   const paymentHeaders = await signPayment(initial);
   const final = await post(fetcher, body, idempotencyKey, paymentHeaders);
-  if (!final.ok) throw errorForStatus(final.status);
+  if (!final.ok) throw await errorFrom(final);
   const parsed = cryptoStartSchema.safeParse(await readJson(final));
   if (!parsed.success) throw new CheckoutError('unavailable');
   return { checkoutId: parsed.data.checkoutId };
+}
+
+const authorizationSchema = z
+  .object({
+    from: z.string().regex(/^0x[\da-fA-F]{40}$/),
+    to: z.string().regex(/^0x[\da-fA-F]{40}$/),
+    value: z.string().regex(/^\d{1,30}$/),
+    validAfter: z.string().regex(/^\d{1,20}$/),
+    validBefore: z.string().regex(/^\d{1,20}$/),
+    nonce: z.string().regex(/^0x[\da-fA-F]{64}$/),
+  })
+  .strict();
+
+const walletStartSchema = z.object({
+  method: z.literal('wallet'),
+  checkoutId: checkoutIdSchema,
+  authorization: authorizationSchema,
+  summary: z.string().min(1).max(120),
+  dueAtomic: z.string().regex(/^\d{1,30}$/),
+  expiresAt: z.string().datetime({ offset: true }),
+});
+
+export type WalletCheckout = z.infer<typeof walletStartSchema>;
+
+/**
+ * Pays from the account's OpenSignet wallet. The server issues the exact authorization (amount,
+ * payee, window and nonce); the person approves it with the wallet vault, which signs it.
+ */
+export async function startWalletCheckout(
+  selection: CheckoutSelection,
+  idempotencyKey: string,
+  fetcher: Fetcher = fetch,
+): Promise<WalletCheckout> {
+  const response = await post(fetcher, requestBody(selection, 'wallet'), idempotencyKey);
+  if (!response.ok) {
+    let code: unknown;
+    try {
+      code = ((await response.clone().json()) as { error?: unknown }).error;
+    } catch {
+      code = undefined;
+    }
+    if (code === 'bad_request') throw new CheckoutError('wallet_not_ready');
+    throw errorFor(response.status, code);
+  }
+  const parsed = walletStartSchema.safeParse(await readJson(response));
+  if (!parsed.success) throw new CheckoutError('unavailable');
+  return parsed.data;
+}
+
+export async function payWalletCheckout(
+  checkoutId: string,
+  signature: string,
+  fetcher: Fetcher = fetch,
+): Promise<void> {
+  if (!isCheckoutId(checkoutId)) throw new CheckoutError('invalid');
+  let response: Response;
+  try {
+    response = await fetcher(`${CHECKOUT_API}/${encodeURIComponent(checkoutId)}/pay`, {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      redirect: 'error',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signature }),
+    });
+  } catch {
+    throw new CheckoutError('unavailable');
+  }
+  if (!response.ok) throw await errorFrom(response);
+}
+
+const quoteSchema = z.object({
+  mode: z.enum(['now', 'extend', 'at_renewal']),
+  priceAtomic: z.string().regex(/^\d{1,30}$/),
+  creditAtomic: z.string().regex(/^\d{1,30}$/),
+  dueAtomic: z.string().regex(/^\d{1,30}$/),
+  startsAt: z.string().datetime({ offset: true }),
+  cardAvailable: z.boolean(),
+  current: z
+    .object({
+      plan: z.string(),
+      planSku: z.string(),
+      period: z.enum(['monthly', 'yearly']),
+      method: z.enum(['card', 'crypto', 'wallet']),
+      currentPeriodEnd: z.string().datetime({ offset: true }),
+    })
+    .nullable(),
+});
+
+export type CheckoutQuote = z.infer<typeof quoteSchema>;
+
+/** What buying would cost right now (credit for an upgrade included) and when it starts. */
+export async function getCheckoutQuote(
+  selection: CheckoutSelection,
+  method: CheckoutMethod,
+  signal?: AbortSignal,
+  fetcher: Fetcher = fetch,
+): Promise<CheckoutQuote> {
+  const query = new URLSearchParams({
+    plan: selection.plan,
+    planSku: selection.sku,
+    period: selection.period,
+    method,
+  });
+  let response: Response;
+  try {
+    response = await fetcher(`/api/v1/billing/quote?${query.toString()}`, {
+      credentials: 'include',
+      cache: 'no-store',
+      redirect: 'error',
+      signal,
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new CheckoutError('unavailable');
+  }
+  if (!response.ok) throw await errorFrom(response);
+  const parsed = quoteSchema.safeParse(await readJson(response));
+  if (!parsed.success) throw new CheckoutError('unavailable');
+  return parsed.data;
+}
+
+/** Schedules a USDC plan change for the next renewal; nothing is charged now. */
+export async function scheduleChange(
+  selection: CheckoutSelection,
+  method: Exclude<CheckoutMethod, 'card'>,
+  fetcher: Fetcher = fetch,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetcher('/api/v1/billing/plan/schedule', {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      redirect: 'error',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        plan: selection.plan,
+        planSku: selection.sku,
+        period: selection.period,
+        method,
+      }),
+    });
+  } catch {
+    throw new CheckoutError('unavailable');
+  }
+  if (!response.ok) throw await errorFrom(response);
 }
 
 /** Reads a checkout's status from the server; the return page trusts nothing else. */

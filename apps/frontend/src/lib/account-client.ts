@@ -8,6 +8,7 @@ import {
   walletViewSchema,
   vaultChallengeSchema,
   vaultKeySchema,
+  paymentSignatureSchema,
   nonceSchema,
   type AccountErrorCode,
   type AccountSession,
@@ -116,6 +117,13 @@ export interface AccountClient {
   applyApproverChange(challengeId: string): Promise<EmbeddedWallet | null>;
   /** Single-use token for the wallet window's export. */
   walletExportToken(): Promise<string>;
+  /** Asks for an approval to pay OpenSignet from the wallet (the exact checkout authorization). */
+  startWalletPayment(
+    factor: 'email' | 'wallet',
+    payment: { to: string; value: string; validBefore: string; nonce: string; summary: string },
+  ): Promise<VaultChallenge>;
+  /** The vault's signature for an approved payment. */
+  signWalletPayment(challengeId: string): Promise<string>;
   deleteAccount(): Promise<void>;
   signOut(): Promise<void>;
 }
@@ -218,6 +226,17 @@ export function createAccountClient(fetcher: typeof fetch = fetch): AccountClien
       (await call('wallet/approvers', 'POST', walletViewSchema, { challengeId })).wallet,
     walletExportToken: async () =>
       (await call('wallet/export/start', 'POST', walletTokenSchema, {})).token,
+    startWalletPayment: (factor, payment) =>
+      call('wallet/payments/start', 'POST', vaultChallengeSchema, { factor, payment }),
+    signWalletPayment: async (challengeId) =>
+      (
+        await call(
+          `wallet/payments/${encodeURIComponent(challengeId)}/sign`,
+          'POST',
+          paymentSignatureSchema,
+          {},
+        )
+      ).signature,
     deleteAccount: () => call('account', 'DELETE', empty).then(() => undefined),
     signOut: () => call('auth/session', 'DELETE', empty).then(() => undefined),
   };

@@ -1,8 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { base } from 'wagmi/chains';
-import { useAccount, useDisconnect, useSignMessage } from 'wagmi';
 import type { Address } from 'viem';
 import {
   Check,
@@ -19,13 +18,11 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { CodeInput } from '@/components/sign-in/code-input';
-import { WalletList } from '@/components/wallet/wallet-list';
+import { LinkedWalletSigner } from '@/components/wallet/linked-wallet-signer';
+import { VaultApprovalDialog } from '@/components/wallet/vault-approval-dialog';
 import { useUsdcBalance } from '@/hooks/use-usdc-balance';
 import { AccountError } from '@/lib/account-client';
-import type { EmbeddedWallet, VaultChallenge, WalletApprover } from '@/lib/account-contract';
-import { EMAIL_CODE_LENGTH } from '@/lib/sign-in-contract';
-import { sealProof } from '@/lib/vault-seal';
+import type { EmbeddedWallet, WalletApprover } from '@/lib/account-contract';
 import { openWalletWindow, WalletWindowError, type SignRequest } from '@/lib/wallet-window';
 import { formatUsd, shortAddress } from '@/lib/utils';
 import { useSettings } from './settings-context';
@@ -264,112 +261,6 @@ function ApproversCard({ wallet }: { wallet: EmbeddedWallet }) {
   );
 }
 
-/** Signs `message` with the linked wallet `expected`, connecting it first if needed. */
-function LinkedWalletSigner({
-  expected,
-  message,
-  browserCheck,
-  onSigned,
-  onBusy,
-}: {
-  expected: string;
-  message: string;
-  browserCheck?: string | null;
-  onSigned: (signature: string) => Promise<void>;
-  onBusy: (busy: boolean) => void;
-}) {
-  const { address, isConnected } = useAccount();
-  const { disconnectAsync } = useDisconnect();
-  const { signMessageAsync } = useSignMessage();
-  const [signing, setSigning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const matches = Boolean(address && address.toLowerCase() === expected.toLowerCase());
-
-  async function sign() {
-    if (!address || !matches) return;
-    setSigning(true);
-    onBusy(true);
-    setError(null);
-    try {
-      const signature = await signMessageAsync({ account: address, message });
-      await onSigned(signature);
-    } catch (failure) {
-      setError(
-        failure instanceof AccountError
-          ? failure.message
-          : 'The signature wasn’t completed. Try again from your wallet.',
-      );
-    } finally {
-      setSigning(false);
-      onBusy(false);
-    }
-  }
-
-  if (!isConnected || !address) {
-    return (
-      <div>
-        <p className="mb-3 text-sm text-muted-foreground">
-          Connect your linked wallet{' '}
-          <span className="font-mono text-foreground">{shortAddress(expected)}</span>.
-        </p>
-        <WalletList />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      {browserCheck && (
-        <div className="rounded-xl border border-border/80 bg-background/50 px-3.5 py-3 text-sm">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Browser check
-          </div>
-          <div className="mt-1 font-mono text-base font-semibold tracking-wider">
-            {browserCheck}
-          </div>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Your wallet’s request must show the same check as the wallet window.
-          </p>
-        </div>
-      )}
-      <div className="flex items-center gap-3 rounded-xl border border-border/80 bg-background/50 px-3.5 py-3">
-        <span
-          className={
-            matches
-              ? 'h-2 w-2 rounded-full bg-[hsl(var(--brand-emerald))]'
-              : 'h-2 w-2 rounded-full bg-destructive'
-          }
-          aria-hidden
-        />
-        <span className="min-w-0 flex-1 truncate font-mono text-sm">{shortAddress(address)}</span>
-        <button
-          type="button"
-          className="shrink-0 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          onClick={() => void disconnectAsync().catch(() => undefined)}
-          disabled={signing}
-        >
-          Use another wallet
-        </button>
-      </div>
-      {!matches && (
-        <InlineNotice tone="warning">
-          This isn’t your linked wallet. Switch to {shortAddress(expected)} to approve.
-        </InlineNotice>
-      )}
-      {error && <InlineNotice>{error}</InlineNotice>}
-      <Button
-        type="button"
-        className="h-11 w-full"
-        disabled={!matches || signing}
-        onClick={() => void sign()}
-      >
-        {signing && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-        {signing ? 'Confirm in your wallet' : 'Sign to approve'}
-      </Button>
-    </div>
-  );
-}
-
 /**
  * Moves wallet approvals to the account's current email and linked wallet. The current
  * approvers must approve it, so a takeover of the email alone never reaches the wallet.
@@ -382,173 +273,21 @@ function ApproverChangeDialog({
   onClose: () => void;
 }) {
   const { client, update } = useSettings();
-  const canEmail = approvers.some((approver) => approver.kind === 'email');
-  const canWallet = approvers.some((approver) => approver.kind === 'wallet');
-  const [factor, setFactor] = useState<'email' | 'wallet'>(canEmail ? 'email' : 'wallet');
-  const [challenge, setChallenge] = useState<VaultChallenge | null>(null);
-  const [starting, setStarting] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<AccountError | null>(null);
-  const [code, setCode] = useState('');
-  const inputId = useId();
-  const input = useRef<HTMLInputElement>(null);
-
-  const start = useCallback(
-    async (chosen: 'email' | 'wallet') => {
-      setStarting(true);
-      setError(null);
-      setCode('');
-      setChallenge(null);
-      try {
-        setChallenge(await client.startApproverChange(chosen));
-        if (chosen === 'email') window.setTimeout(() => input.current?.focus(), 0);
-      } catch (failure) {
-        setError(failure instanceof AccountError ? failure : new AccountError('unavailable'));
-      } finally {
-        setStarting(false);
-      }
-    },
-    [client],
-  );
-
-  // One approval per chosen method: never send two codes for one change.
-  const startedFor = useRef<'email' | 'wallet' | null>(null);
-  useEffect(() => {
-    if (startedFor.current === factor) return;
-    startedFor.current = factor;
-    void start(factor);
-  }, [factor, start]);
-
-  async function finish(proof: { code?: string; signature?: string }) {
-    if (!challenge) return;
-    const vaultKey = await client.vaultKey();
-    const sealed = await sealProof(vaultKey, { challengeId: challenge.challengeId, ...proof });
-    await client.completeApproval(challenge.challengeId, sealed);
-    await client.applyApproverChange(challenge.challengeId);
-    update(await client.get());
-    toast.success('Wallet approvals updated');
-    onClose();
-  }
-
-  async function verify(value: string) {
-    if (value.length !== EMAIL_CODE_LENGTH || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await finish({ code: value });
-    } catch (failure) {
-      setError(failure instanceof AccountError ? failure : new AccountError('unavailable'));
-      setCode('');
-      window.setTimeout(() => input.current?.focus(), 0);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const dead =
-    error?.code === 'code_expired' ||
-    error?.code === 'too_many_attempts' ||
-    error?.code === 'approval_required';
-
   return (
-    <Dialog
+    <VaultApprovalDialog
       title="Confirm the change"
-      description={
-        factor === 'email'
-          ? 'Approve with a code sent to your current approval email.'
-          : 'Approve by signing with your current approval wallet.'
-      }
+      emailDescription="Approve with a code sent to your current approval email."
+      walletDescription="Approve by signing with your current approval wallet."
+      approvers={approvers}
+      start={(factor) => client.startApproverChange(factor)}
+      onApproved={async (challenge) => {
+        await client.applyApproverChange(challenge.challengeId);
+        update(await client.get());
+        toast.success('Wallet approvals updated');
+        onClose();
+      }}
       onClose={onClose}
-      busy={busy}
-    >
-      {starting ? (
-        <p role="status" className="flex items-center gap-2.5 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
-          {factor === 'email' ? 'Sending a code…' : 'Preparing the approval…'}
-        </p>
-      ) : challenge && factor === 'email' ? (
-        <div>
-          <p className="mb-4 text-sm text-muted-foreground">
-            We sent a {EMAIL_CODE_LENGTH}-digit code to{' '}
-            <span className="font-medium text-foreground">{challenge.sentTo}</span>.
-          </p>
-          <label htmlFor={inputId} className="sr-only">
-            {EMAIL_CODE_LENGTH}-digit code
-          </label>
-          <CodeInput
-            ref={input}
-            id={inputId}
-            value={code}
-            onChange={(value) => {
-              setCode(value);
-              if (error && !dead) setError(null);
-            }}
-            onComplete={(value) => void verify(value)}
-            disabled={busy || dead}
-            invalid={Boolean(error) && !dead}
-          />
-          {error && <InlineNotice className="mt-3">{error.message}</InlineNotice>}
-          <div className="mt-4 flex flex-col gap-2">
-            <Button
-              type="button"
-              className="h-11 w-full"
-              disabled={busy || dead || code.length !== EMAIL_CODE_LENGTH}
-              onClick={() => void verify(code)}
-            >
-              {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-              {busy ? 'Checking code…' : 'Approve'}
-            </Button>
-            {dead && (
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-10 w-full"
-                onClick={() => void start('email')}
-              >
-                Send a new code
-              </Button>
-            )}
-          </div>
-        </div>
-      ) : challenge && challenge.message ? (
-        <LinkedWalletSigner
-          expected={challenge.sentTo}
-          message={challenge.message}
-          onBusy={setBusy}
-          onSigned={(signature) => finish({ signature })}
-        />
-      ) : (
-        <div className="flex flex-col gap-3">
-          {error && <InlineNotice>{error.message}</InlineNotice>}
-          <Button
-            type="button"
-            variant="outline"
-            className="h-10 w-full"
-            onClick={() => void start(factor)}
-          >
-            <RefreshCw className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-            Try again
-          </Button>
-        </div>
-      )}
-      {canEmail && canWallet && !busy && (
-        <button
-          type="button"
-          onClick={() => setFactor(factor === 'email' ? 'wallet' : 'email')}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-        >
-          {factor === 'email' ? (
-            <>
-              <Wallet className="h-4 w-4" strokeWidth={1.75} aria-hidden /> Use my wallet instead
-            </>
-          ) : (
-            <>
-              <Mail className="h-4 w-4" strokeWidth={1.75} aria-hidden /> Use an email code instead
-            </>
-          )}
-        </button>
-      )}
-    </Dialog>
+    />
   );
 }
 

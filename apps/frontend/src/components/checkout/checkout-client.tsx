@@ -2,38 +2,46 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useAccount, useConfig } from 'wagmi';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useAccount, useConfig, useDisconnect } from 'wagmi';
 import { getWalletClient } from 'wagmi/actions';
 import { base } from 'wagmi/chains';
 import type { Address } from 'viem';
 import {
   ArrowRight,
   Calculator,
+  CalendarClock,
   Check,
   CircleCheck,
+  Copy,
   CreditCard,
   Gauge,
   Loader2,
   LockKeyhole,
+  LogIn,
   ShieldCheck,
   Wallet,
+  WalletCards,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { createX402PaymentHeaders } from '@opensignet/sdk';
 import { ENTERPRISE_PLAN_OFFERS, SERVICE_PLAN_CATALOG } from '@opensignet/shared';
 import type { ServicePlanSku } from '@opensignet/shared';
 import { Button } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { SelectMenu } from '@/components/ui/select-menu';
-import { HeaderAccountButton } from '@/components/wallet/header-account-button';
-import { useSiwe } from '@/hooks/use-siwe';
+import { ConnectWalletButton } from '@/components/wallet/connect-wallet-button';
+import { VaultApprovalDialog } from '@/components/wallet/vault-approval-dialog';
+import { useAccountSession } from '@/hooks/use-account-session';
 import { useBaseChainGuard } from '@/hooks/use-base-chain';
+import { useUsdcBalance } from '@/hooks/use-usdc-balance';
+import { createAccountClient } from '@/lib/account-client';
+import type { EmbeddedWallet } from '@/lib/account-contract';
 import { isBaseChainMismatchError, isBaseChainRequiredError } from '@/lib/base-chain';
 import { getTransactionErrorCopy } from '@/lib/transaction-errors';
-import { shortAddress } from '@/lib/utils';
-import { cn } from '@/lib/utils';
+import { cn, shortAddress } from '@/lib/utils';
 import {
   BILLING_PERIODS,
   CheckoutError,
@@ -42,13 +50,19 @@ import {
   checkoutPrice,
   createIdempotencyKey,
   formatCheckoutAmount,
+  getCheckoutQuote,
   parseCheckoutSelection,
+  payWalletCheckout,
+  scheduleChange,
   startCardCheckout,
   startCryptoCheckout,
+  startWalletCheckout,
   type BillingPeriod,
   type CheckoutMethod,
+  type CheckoutQuote,
   type CheckoutSelection,
   type PaidPlanKey,
+  type WalletCheckout,
 } from '@/lib/checkout';
 
 const PLAN_ICONS: Record<PaidPlanKey, LucideIcon> = {
@@ -62,6 +76,13 @@ const ENTERPRISE_OPTIONS = ENTERPRISE_PLAN_OFFERS.map((offer) => ({
   value: offer.sku as ServicePlanSku,
   label: `${offer.monthlyEmails.toLocaleString('en-US')} emails`,
 }));
+
+const PLAN_LABELS: Record<string, string> = {
+  plus: 'Plus',
+  pro: 'Pro',
+  max: 'Max',
+  enterprise: 'Enterprise',
+};
 
 function planFeatures(selection: CheckoutSelection, monthlyEmails: number): string[] {
   const entry = SERVICE_PLAN_CATALOG[selection.plan];
@@ -89,20 +110,34 @@ const METHODS: ReadonlyArray<{
   Icon: LucideIcon;
 }> = [
   {
+    value: 'wallet',
+    title: 'OpenSignet wallet',
+    description: 'USDC from your account’s own wallet, approved by you.',
+    Icon: Wallet,
+  },
+  {
+    value: 'crypto',
+    title: 'Another wallet',
+    description: 'USDC on Base from any wallet you connect.',
+    Icon: WalletCards,
+  },
+  {
     value: 'card',
     title: 'Card',
     description: 'Visa, Mastercard, American Express and more, through Stripe.',
     Icon: CreditCard,
   },
-  {
-    value: 'crypto',
-    title: 'Crypto',
-    description: 'USDC on Base, approved in your wallet.',
-    Icon: Wallet,
-  },
 ];
 
 type Notice = { tone: 'error' | 'info'; text: string } | null;
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
 
 /** Plan checkout: order summary, account, payment method and a single protected pay action. */
 export function CheckoutClient() {
@@ -148,19 +183,24 @@ function Checkout({
   onChange: (next: Pick<CheckoutSelection, 'sku' | 'period'>) => void;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
   const config = useConfig();
-  const { address } = useAccount();
-  const { session } = useSiwe();
+  const { address: connected } = useAccount();
+  const { disconnectAsync } = useDisconnect();
+  const session = useAccountSession();
   const { ensureBaseChain } = useBaseChainGuard();
-  const signedIn = Boolean(
-    session.authenticated && address && session.address?.toLowerCase() === address.toLowerCase(),
-  );
+  const signedIn = session.status === 'signed-in';
 
-  const [method, setMethod] = useState<CheckoutMethod>('card');
+  const [method, setMethod] = useState<CheckoutMethod>('wallet');
   const [phase, setPhase] = useState<'idle' | 'working' | 'redirecting'>('idle');
   const [notice, setNotice] = useState<Notice>(
     canceled ? { tone: 'info', text: 'Payment canceled. Nothing was charged.' } : null,
   );
+  const [quote, setQuote] = useState<CheckoutQuote | null>(null);
+  const [quoteFailed, setQuoteFailed] = useState(false);
+  const [wallet, setWallet] = useState<EmbeddedWallet | null>(null);
+  const [approval, setApproval] = useState<WalletCheckout | null>(null);
   /** One key per attempt: a retry of the same plan, period and method reuses it. */
   const attemptKey = useRef<string | null>(null);
   const busy = useRef(false);
@@ -170,29 +210,99 @@ function Checkout({
     attemptKey.current = null;
   }, [method, selection.sku, selection.period]);
 
+  // The account's wallet (its address, balance and approvers).
+  useEffect(() => {
+    if (!signedIn) return;
+    const controller = new AbortController();
+    createAccountClient()
+      .wallet(controller.signal)
+      .then(setWallet)
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [signedIn]);
+
+  // The price for this account right now: credits, extensions and switches at renewal.
+  useEffect(() => {
+    if (!signedIn) return;
+    const controller = new AbortController();
+    setQuoteFailed(false);
+    getCheckoutQuote(selection, method, controller.signal)
+      .then((next) => {
+        setQuote(next);
+        if (!next.cardAvailable && method === 'card') setMethod('wallet');
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setQuoteFailed(true);
+      });
+    return () => controller.abort();
+  }, [signedIn, selection, method]);
+
   const price = checkoutPrice(selection);
   const total = formatCheckoutAmount(price.amountAtomic);
   const entry = SERVICE_PLAN_CATALOG[selection.plan];
   const Icon = PLAN_ICONS[selection.plan];
   const periodLabel = selection.period === 'monthly' ? 'month' : 'year';
   const working = phase !== 'idle';
+  const mode = quote?.mode ?? 'now';
+  const credit = quote ? BigInt(quote.creditAtomic) : 0n;
+  const due = quote ? BigInt(quote.dueAtomic) : price.amountAtomic;
+  const cardAvailable = quote?.cardAvailable ?? false;
+  const current = quote?.current ?? null;
+  const returnTo = `${pathname}?${params.toString()}`;
 
-  async function pay() {
-    if (busy.current) return;
-    if (!signedIn || !address) {
-      setNotice({ tone: 'error', text: 'Sign in to continue. Nothing was charged.' });
+  function fail(error: unknown) {
+    setPhase('idle');
+    if (error instanceof CheckoutError) {
+      setNotice({ tone: 'error', text: error.message });
       return;
     }
+    if (isBaseChainRequiredError(error) || isBaseChainMismatchError(error)) {
+      setNotice({ tone: 'info', text: 'Switch your wallet to Base to pay with USDC.' });
+      return;
+    }
+    const copy = getTransactionErrorCopy(error, {
+      action: 'Payment',
+      stage: 'signature',
+      fallback: CHECKOUT_ERROR_COPY.unavailable,
+    });
+    setNotice({
+      tone: copy.kind === 'cancelled' ? 'info' : 'error',
+      text:
+        copy.kind === 'cancelled'
+          ? 'Payment canceled in your wallet. Nothing was charged.'
+          : copy.description || CHECKOUT_ERROR_COPY.unavailable,
+    });
+  }
+
+  async function pay() {
+    if (busy.current || !signedIn) return;
     busy.current = true;
     setNotice(null);
     setPhase('working');
     attemptKey.current ??= createIdempotencyKey();
     const key = attemptKey.current;
     try {
+      if (mode === 'at_renewal' && method !== 'card') {
+        await scheduleChange(selection, method);
+        setPhase('idle');
+        toast.success(`Your plan changes on ${formatDate(quote?.startsAt ?? '')}`);
+        router.push('/dashboard');
+        return;
+      }
       if (method === 'card') {
         const { checkoutUrl } = await startCardCheckout(selection, key);
         setPhase('redirecting');
         window.location.assign(checkoutUrl);
+        return;
+      }
+      if (method === 'wallet') {
+        setApproval(await startWalletCheckout(selection, key));
+        setPhase('idle');
+        return;
+      }
+      if (!connected) {
+        setPhase('idle');
+        setNotice({ tone: 'info', text: 'Connect the wallet you want to pay from first.' });
         return;
       }
       if (!(await ensureBaseChain())) {
@@ -200,7 +310,7 @@ function Checkout({
         return;
       }
       const signer = await getWalletClient(config, {
-        account: address as Address,
+        account: connected as Address,
         chainId: base.id,
       });
       if (!signer?.account) throw new CheckoutError('unavailable');
@@ -210,32 +320,13 @@ function Checkout({
       setPhase('redirecting');
       router.push(`/checkout/complete?checkout=${encodeURIComponent(checkoutId)}`);
     } catch (error) {
-      setPhase('idle');
-      if (error instanceof CheckoutError) {
-        setNotice({ tone: 'error', text: error.message });
-        return;
-      }
-      if (isBaseChainRequiredError(error) || isBaseChainMismatchError(error)) {
-        setNotice({ tone: 'info', text: 'Switch your wallet to Base to pay with USDC.' });
-        return;
-      }
-      const copy = getTransactionErrorCopy(error, {
-        action: 'Payment',
-        stage: 'signature',
-        fallback: CHECKOUT_ERROR_COPY.unavailable,
-      });
-      setNotice({
-        tone: copy.kind === 'cancelled' ? 'info' : 'error',
-        text:
-          copy.kind === 'cancelled'
-            ? 'Payment canceled in your wallet. Nothing was charged.'
-            : copy.description || CHECKOUT_ERROR_COPY.unavailable,
-      });
+      fail(error);
     } finally {
       busy.current = false;
     }
   }
 
+  const dueText = formatCheckoutAmount(due);
   const payLabel =
     phase === 'redirecting'
       ? method === 'card'
@@ -244,10 +335,16 @@ function Checkout({
       : phase === 'working'
         ? method === 'card'
           ? 'Preparing payment…'
-          : 'Waiting for your wallet…'
-        : method === 'card'
-          ? 'Continue to payment'
-          : `Pay ${total} with USDC`;
+          : method === 'wallet'
+            ? 'Preparing your approval…'
+            : 'Waiting for your wallet…'
+        : mode === 'at_renewal'
+          ? method === 'card'
+            ? 'Add card for renewal'
+            : `Switch on ${quote ? formatDate(quote.startsAt) : 'renewal'}`
+          : method === 'card'
+            ? 'Continue to payment'
+            : `Pay ${dueText} with USDC`;
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)] lg:gap-10">
@@ -313,17 +410,39 @@ function Checkout({
             </dt>
             <dd className="font-mono">{total}</dd>
           </div>
+          {credit > 0n && mode === 'now' ? (
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-muted-foreground">
+                Credit for the rest of your {current ? PLAN_LABELS[current.plan] : ''} plan
+              </dt>
+              <dd className="font-mono text-[hsl(146_45%_30%)]">−{formatCheckoutAmount(credit)}</dd>
+            </div>
+          ) : null}
           <div className="flex items-baseline justify-between gap-4 border-t border-border/70 pt-3">
             <dt className="font-semibold">Total due today</dt>
             <dd className="font-mono text-xl font-bold" aria-live="polite">
-              {total}
+              {mode === 'at_renewal' ? '$0.00' : dueText}
             </dd>
           </div>
         </dl>
-        <p className="mt-3 text-xs leading-5 text-muted-foreground">
-          {total} per {periodLabel}. Prices are in US dollars; crypto payments are made in USDC on
-          Base, where 1 USDC equals 1 US dollar.
-        </p>
+        {quote && mode === 'at_renewal' ? (
+          <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+            <CalendarClock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            Your current plan runs until {formatDate(quote.startsAt)}. This change starts then, and
+            the first {total} is charged on that day.
+          </p>
+        ) : quote && mode === 'extend' ? (
+          <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+            <CalendarClock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            You already have this plan. Paying now extends it by one {periodLabel} from{' '}
+            {formatDate(quote.startsAt)}.
+          </p>
+        ) : (
+          <p className="mt-3 text-xs leading-5 text-muted-foreground">
+            {total} per {periodLabel}. Prices are in US dollars; crypto payments are made in USDC on
+            Base, where 1 USDC equals 1 US dollar.
+          </p>
+        )}
       </section>
 
       {/* Account and payment. */}
@@ -334,13 +453,17 @@ function Checkout({
           </h2>
 
           <StepHeading index={1} title="Account" />
-          {signedIn && address ? (
+          {session.status === 'loading' ? (
+            <div className="mt-3 h-[58px] animate-pulse rounded-xl bg-muted/60 motion-reduce:animate-none" />
+          ) : session.status === 'signed-in' ? (
             <div className="mt-3 flex items-center gap-3 rounded-xl border border-border/70 bg-background/50 px-4 py-3">
               <CircleCheck className="h-5 w-5 shrink-0 text-emerald-700" aria-hidden />
               <div className="min-w-0">
-                <div className="text-sm font-medium">Signed in</div>
-                <div className="truncate font-mono text-xs text-muted-foreground">
-                  {shortAddress(address, 6)}
+                <div className="truncate text-sm font-medium">
+                  {session.account.displayName ?? 'Signed in'}
+                </div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {session.account.email ?? 'Signed in with a wallet'}
                 </div>
               </div>
             </div>
@@ -349,22 +472,62 @@ function Checkout({
               <p className="text-sm leading-6 text-muted-foreground">
                 Sign in so the plan is added to your account.
               </p>
-              <HeaderAccountButton
-                size="lg"
-                destination={null}
-                prepare={ensureBaseChain}
-                showAccount={false}
-                showError
-                className="w-full sm:w-auto"
-              />
+              <Button asChild size="lg" className="w-full sm:w-auto">
+                <Link href={`/sign-in?return_to=${encodeURIComponent(returnTo)}`}>
+                  <LogIn className="h-4 w-4" aria-hidden />
+                  Sign in to continue
+                </Link>
+              </Button>
             </div>
           )}
 
           <div className="my-6 border-t border-border/70" />
 
           <StepHeading index={2} title="Payment method" />
-          <MethodPicker value={method} onChange={setMethod} disabled={working} />
+          <MethodPicker
+            value={method}
+            onChange={setMethod}
+            disabled={working}
+            cardAvailable={cardAvailable}
+          />
 
+          {signedIn && method === 'wallet' ? (
+            <WalletPanel wallet={wallet} due={due} renewal={mode === 'at_renewal'} />
+          ) : null}
+          {signedIn && method === 'crypto' ? (
+            <div className="mt-4 flex flex-col gap-2 rounded-xl border border-border/70 bg-background/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-muted-foreground">
+                {connected ? (
+                  <>
+                    Paying from{' '}
+                    <span className="font-mono text-foreground">{shortAddress(connected)}</span>
+                  </>
+                ) : (
+                  'Connect the wallet you want to pay from.'
+                )}
+              </p>
+              {connected ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 self-start px-2 text-xs sm:self-auto"
+                  onClick={() => void disconnectAsync().catch(() => undefined)}
+                  disabled={working}
+                >
+                  Use another wallet
+                </Button>
+              ) : (
+                <ConnectWalletButton variant="outline" size="sm" label="Connect wallet" />
+              )}
+            </div>
+          ) : null}
+
+          {quoteFailed ? (
+            <InlineNotice className="mt-5">
+              The price for your account couldn’t be loaded. Check your connection and try again.
+            </InlineNotice>
+          ) : null}
           {notice ? (
             <InlineNotice tone={notice.tone} className="mt-5">
               {notice.text}
@@ -375,7 +538,7 @@ function Checkout({
             type="button"
             size="lg"
             onClick={() => void pay()}
-            disabled={!signedIn || working}
+            disabled={!signedIn || working || !quote || (method === 'card' && !cardAvailable)}
             className="group/pay mt-5 h-12 w-full text-[15px]"
           >
             {working ? (
@@ -391,7 +554,7 @@ function Checkout({
               />
             ) : null}
           </Button>
-          {!signedIn ? (
+          {!signedIn && session.status !== 'loading' ? (
             <p className="mt-2 text-center text-xs text-muted-foreground">
               Sign in above to continue.
             </p>
@@ -401,7 +564,9 @@ function Checkout({
             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
             {method === 'card'
               ? "You pay on Stripe's secure page. OpenSignet never sees or stores your card details."
-              : 'Your wallet shows the exact USDC amount first. Nothing is charged until you approve it.'}
+              : method === 'wallet'
+                ? 'You approve the exact amount with a code or your linked wallet. Nothing moves before you approve.'
+                : 'Your wallet shows the exact USDC amount first. Nothing is charged until you approve it.'}
           </p>
         </div>
 
@@ -420,6 +585,120 @@ function Checkout({
           .
         </p>
       </section>
+
+      {approval && wallet?.approvers ? (
+        <VaultApprovalDialog
+          title={`Approve ${formatCheckoutAmount(BigInt(approval.dueAtomic))}`}
+          emailDescription="Approve this payment with a code sent to your email."
+          walletDescription="Approve this payment by signing with your linked wallet."
+          approvers={wallet.approvers}
+          start={(factor) =>
+            createAccountClient().startWalletPayment(factor, {
+              to: approval.authorization.to,
+              value: approval.authorization.value,
+              validBefore: approval.authorization.validBefore,
+              nonce: approval.authorization.nonce,
+              summary: approval.summary,
+            })
+          }
+          onApproved={async (challenge) => {
+            const signature = await createAccountClient().signWalletPayment(challenge.challengeId);
+            setPhase('redirecting');
+            await payWalletCheckout(approval.checkoutId, signature);
+            setApproval(null);
+            router.push(`/checkout/complete?checkout=${encodeURIComponent(approval.checkoutId)}`);
+          }}
+          onClose={() => {
+            setApproval(null);
+            setPhase('idle');
+          }}
+        >
+          <div className="mb-4 rounded-xl border border-border/80 bg-background/50 px-3.5 py-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">{approval.summary}</span>
+              <span className="font-mono font-semibold">
+                {formatCheckoutAmount(BigInt(approval.dueAtomic))}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              From your OpenSignet wallet to OpenSignet, in USDC on Base.
+            </p>
+          </div>
+        </VaultApprovalDialog>
+      ) : null}
+    </div>
+  );
+}
+
+/** The OpenSignet wallet as a payment source: its balance, and how to add USDC if short. */
+function WalletPanel({
+  wallet,
+  due,
+  renewal,
+}: {
+  wallet: EmbeddedWallet | null;
+  due: bigint;
+  renewal: boolean;
+}) {
+  const { balanceNumber, isLoading } = useUsdcBalance(
+    (wallet?.address ?? undefined) as Address | undefined,
+    base.id,
+  );
+  const [copied, setCopied] = useState(false);
+  if (!wallet) {
+    return (
+      <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground" role="status">
+        <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
+        Loading your wallet…
+      </p>
+    );
+  }
+  const balanceAtomic = BigInt(Math.floor(balanceNumber * 1_000_000));
+  const short = !isLoading && !renewal && balanceAtomic < due;
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(wallet?.address ?? '');
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      toast.error('Couldn’t copy the address. Select it and copy it instead.');
+    }
+  }
+  return (
+    <div className="mt-4 rounded-xl border border-border/70 bg-background/50 px-4 py-3">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="text-muted-foreground">Balance</span>
+        <span className="font-mono font-semibold tabular-nums">
+          {isLoading ? '…' : `${balanceNumber.toFixed(2)} USDC`}
+        </span>
+      </div>
+      {short ? (
+        <div className="mt-3 border-t border-border/70 pt-3">
+          <p className="text-sm leading-6">
+            Add at least {formatCheckoutAmount(due - balanceAtomic)} in USDC on Base to your wallet
+            to pay this way.
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-md bg-secondary/70 px-2.5 py-1.5 font-mono text-[12px]">
+              {wallet.address}
+            </code>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={() => void copy()}
+              aria-label={copied ? 'Address copied' : 'Copy wallet address'}
+            >
+              {copied ? (
+                <Check className="h-4 w-4" aria-hidden />
+              ) : (
+                <Copy className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+              )}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -479,13 +758,16 @@ function MethodPicker({
   value,
   onChange,
   disabled,
+  cardAvailable,
 }: {
   value: CheckoutMethod;
   onChange: (value: CheckoutMethod) => void;
   disabled?: boolean;
+  cardAvailable: boolean;
 }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
-  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+  const available = METHODS.filter((method) => method.value !== 'card' || cardAvailable);
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, option: CheckoutMethod) => {
     const step =
       event.key === 'ArrowDown' || event.key === 'ArrowRight'
         ? 1
@@ -494,16 +776,17 @@ function MethodPicker({
           : 0;
     if (!step) return;
     event.preventDefault();
-    const next = (index + step + METHODS.length) % METHODS.length;
-    const method = METHODS[next];
-    if (!method) return;
-    onChange(method.value);
-    refs.current[next]?.focus();
+    const index = available.findIndex((method) => method.value === option);
+    const next = available[(index + step + available.length) % available.length];
+    if (!next) return;
+    onChange(next.value);
+    refs.current[METHODS.findIndex((method) => method.value === next.value)]?.focus();
   };
   return (
-    <div role="radiogroup" aria-label="Payment method" className="mt-3 grid gap-3 sm:grid-cols-2">
+    <div role="radiogroup" aria-label="Payment method" className="mt-3 grid gap-3">
       {METHODS.map(({ value: option, title, description, Icon }, index) => {
         const selected = option === value;
+        const unavailable = option === 'card' && !cardAvailable;
         return (
           <button
             key={option}
@@ -513,12 +796,14 @@ function MethodPicker({
             type="button"
             role="radio"
             aria-checked={selected}
+            aria-disabled={unavailable || undefined}
             tabIndex={selected ? 0 : -1}
-            disabled={disabled}
+            disabled={disabled || unavailable}
             onClick={() => onChange(option)}
-            onKeyDown={(event) => onKeyDown(event, index)}
+            onKeyDown={(event) => onKeyDown(event, option)}
             className={cn(
-              'relative flex items-start gap-3 rounded-xl border p-4 text-left transition-[border-color,background-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 disabled:pointer-events-none disabled:opacity-70',
+              'relative flex items-start gap-3 rounded-xl border p-4 text-left transition-[border-color,background-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 disabled:pointer-events-none',
+              unavailable && 'opacity-60',
               selected
                 ? 'border-primary/70 bg-card shadow-[0_10px_24px_-18px_rgba(20,21,18,0.55)] ring-1 ring-primary/40'
                 : 'border-border/80 bg-background/50 hover:border-primary/35 hover:bg-card/80',
@@ -535,7 +820,14 @@ function MethodPicker({
               <Icon className="h-4 w-4" aria-hidden />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold">{title}</span>
+              <span className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                {title}
+                {unavailable ? (
+                  <span className="rounded-full border border-border/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    Coming soon
+                  </span>
+                ) : null}
+              </span>
               <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
                 {description}
               </span>

@@ -107,6 +107,13 @@ export const vaultChallengeSchema = z
   })
   .strict();
 
+export const paymentSignatureSchema = z
+  .object({
+    signature: z.string().regex(/^0x[\da-fA-F]{130}$/),
+    authorization: z.object({}).passthrough(),
+  })
+  .strict();
+
 export const accountSessionSchema = z
   .object({
     id: z.string().min(1),

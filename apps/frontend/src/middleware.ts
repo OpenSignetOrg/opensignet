@@ -10,7 +10,7 @@ const DOCS_ORIGIN =
 const API_ORIGIN = `https://${API_HOST}`;
 const SAFE_REDIRECT_METHODS = new Set(['GET', 'HEAD']);
 // The local address of the identity service used during development.
-const LOCAL_API_ORIGIN = 'http://127.0.0.1:8787';
+const LOCAL_API_ORIGIN = 'http://127.0.0.1:8792';
 const NO_STORE = 'no-store, max-age=0';
 
 function requestHost(value: string | null): string | null {
@@ -125,7 +125,7 @@ export function middleware(request: NextRequest) {
 
   if (isApiNamespace(pathname)) {
     if (host === WEBSITE_HOST && isVersionedApiPath(pathname)) return NextResponse.next();
-    // Local development only: the private identity service answers /api/v1 on this machine, so the
+    // Local development only: the private API service answers /api/v1 on this machine, so the
     // site can be tried end to end on localhost. Production builds drop this branch.
     if (process.env.NODE_ENV === 'development' && isVersionedApiPath(pathname)) {
       return NextResponse.rewrite(
