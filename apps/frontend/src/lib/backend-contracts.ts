@@ -104,7 +104,8 @@ export const managementViewSchema = z
         basename: nullableText,
         ensName: nullableText,
         ownerAddress: address,
-        agentIdNft: z.number().int().nonnegative(),
+        /** Null until the AgentID is minted (the contracts deploy later). */
+        agentIdNft: z.number().int().nonnegative().nullable(),
         status: z.enum(['pending', 'active', 'expired', 'revoked']),
         framework: nullableText,
         createdAt: isoDate,

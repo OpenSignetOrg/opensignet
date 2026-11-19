@@ -164,7 +164,9 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
                 />
               )}
               {agent.ensName && <InfoCard title="ENS name" value={agent.ensName} />}
-              <InfoCard title="AgentID NFT" value={`#${agent.agentIdNft}`} />
+              {agent.agentIdNft !== null && (
+                <InfoCard title="AgentID NFT" value={`#${agent.agentIdNft}`} />
+              )}
               <InfoCard
                 title="Owner"
                 value={shortAddress(ownerAddress, 6)}
@@ -189,17 +191,19 @@ export function AgentDetailClient({ agentId }: { agentId: string }) {
 
             <ManagementSessionProvider signedIn={accountSession.status === 'signed-in'}>
               {/* Renewal Vault */}
-              <RenewalManagement
-                agentId={agent.id}
-                tokenId={agent.agentIdNft}
-                expiresAt={agent.expiresAt ? new Date(agent.expiresAt) : null}
-                ownerAddress={ownerAddress}
-                contractAddresses={{
-                  usdc: management.publicConfig.usdc as `0x${string}`,
-                  renewalVault: management.publicConfig.renewalVault as `0x${string}` | null,
-                }}
-                builderCode={management.publicConfig.builderCode}
-              />
+              {agent.agentIdNft !== null && (
+                <RenewalManagement
+                  agentId={agent.id}
+                  tokenId={agent.agentIdNft}
+                  expiresAt={agent.expiresAt ? new Date(agent.expiresAt) : null}
+                  ownerAddress={ownerAddress}
+                  contractAddresses={{
+                    usdc: management.publicConfig.usdc as `0x${string}`,
+                    renewalVault: management.publicConfig.renewalVault as `0x${string}` | null,
+                  }}
+                  builderCode={management.publicConfig.builderCode}
+                />
+              )}
 
               {/* Plan */}
               <ServicePlanManagement agentId={agent.id} />

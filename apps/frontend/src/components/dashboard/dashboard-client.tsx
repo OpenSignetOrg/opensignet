@@ -28,7 +28,7 @@ export interface DashboardAgent {
   domain: string;
   basename: string | null;
   ensName: string | null;
-  agentIdNft: number;
+  agentIdNft: number | null;
   status: string;
   framework: string | null;
   createdAt: string;
