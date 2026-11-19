@@ -1,12 +1,11 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import { RotateCw, ShieldCheck, UserRound, Wallet } from 'lucide-react';
+import { PageHeader } from '@/components/console/identity-bits';
+import { PageTabs } from '@/components/console/page-tabs';
 import { Button } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { cn } from '@/lib/utils';
 import { SettingsProvider } from './settings-context';
 import { StepUpProvider } from './step-up';
 
@@ -16,52 +15,16 @@ const TABS = [
   { href: '/settings/wallet', label: 'Wallet', icon: Wallet },
 ] as const;
 
-/** Settings frame: title, tab navigation (side rail from 1024px, tab bar below) and the tab body. */
+/** Settings inside the console: heading, section tabs and the section body. */
 export function SettingsShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const current = pathname?.replace(/\/$/, '') || '/settings';
-
   return (
-    <div className="container max-w-5xl py-8 sm:py-12">
-      <div className="mb-6 sm:mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Settings</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground sm:text-[15px]">
-          Manage your profile, how you sign in, and your OpenSignet wallet.
-        </p>
-      </div>
-
-      <div className="lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-10">
-        <nav aria-label="Settings" className="-mx-4 mb-6 sm:mx-0 lg:mb-0">
-          <ul className="flex gap-0.5 overflow-x-auto border-b border-border/80 px-4 [scrollbar-width:none] sm:px-0 lg:sticky lg:top-24 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:border-b-0">
-            {TABS.map(({ href, label, icon: Icon }) => {
-              const active = current === href;
-              return (
-                <li key={href} className="shrink-0">
-                  <Link
-                    href={href}
-                    aria-current={active ? 'page' : undefined}
-                    className={cn(
-                      'relative flex items-center gap-2 whitespace-nowrap px-2.5 py-3 text-sm font-medium min-[360px]:px-3 lg:gap-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 lg:rounded-lg lg:py-2.5',
-                      active
-                        ? 'text-foreground lg:bg-accent/80'
-                        : 'text-muted-foreground hover:text-foreground lg:hover:bg-accent/50',
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />
-                    {label}
-                    {active && (
-                      <span
-                        className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-foreground lg:hidden"
-                        aria-hidden
-                      />
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
-
+    <>
+      <PageHeader
+        title="Settings"
+        description="Your profile, how you sign in, and your OpenSignet wallet."
+      />
+      <PageTabs tabs={TABS} label="Settings sections" />
+      <div className="max-w-3xl">
         <div className="min-w-0">
           <SettingsProvider
             loading={<SettingsSkeleton />}
@@ -81,7 +44,7 @@ export function SettingsShell({ children }: { children: ReactNode }) {
           </SettingsProvider>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 

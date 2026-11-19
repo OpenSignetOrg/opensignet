@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { SelectMenu } from '@/components/ui/select-menu';
 import { ConnectWalletButton } from '@/components/wallet/connect-wallet-button';
+import { ApprovalSummary } from '@/components/wallet/approval-summary';
 import { VaultApprovalDialog } from '@/components/wallet/vault-approval-dialog';
 import { useAccountSession } from '@/hooks/use-account-session';
 import { useBaseChainGuard } from '@/hooks/use-base-chain';
@@ -613,17 +614,18 @@ function Checkout({
             setPhase('idle');
           }}
         >
-          <div className="mb-4 rounded-xl border border-border/80 bg-background/50 px-3.5 py-3 text-sm">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-muted-foreground">{approval.summary}</span>
-              <span className="font-mono font-semibold">
-                {formatCheckoutAmount(BigInt(approval.dueAtomic))}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              From your OpenSignet wallet to OpenSignet, in USDC on Base.
-            </p>
-          </div>
+          <ApprovalSummary
+            icon={Wallet}
+            title={approval.summary}
+            subtitle="One payment"
+            amount={formatCheckoutAmount(BigInt(approval.dueAtomic))}
+            rows={[
+              { label: 'From', value: 'Your OpenSignet wallet' },
+              { label: 'To', value: 'OpenSignet' },
+              { label: 'Paid in', value: 'USDC on Base' },
+            ]}
+            note="This approval pays this exact amount once, to OpenSignet only."
+          />
         </VaultApprovalDialog>
       ) : null}
     </div>

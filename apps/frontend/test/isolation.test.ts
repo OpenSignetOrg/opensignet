@@ -381,7 +381,7 @@ test('browser APIs stay same-origin while server reads use the reviewed public A
   assert.doesNotMatch(solutions, /x-api-key/i);
   assert.doesNotMatch(solutions, /agents\/quote[\s\S]{0,160}method:\s*'POST'/);
   assert.match(solutions, /authorization:\s*'Bearer '\s*\+/);
-  const dashboard = read('src/components/dashboard/dashboard-client.tsx');
+  const dashboard = read('src/components/console/console-shell.tsx');
   assert.doesNotMatch(dashboard, /docs\.opensignet\.com#(?:api|stacks)/);
   const email = read('src/components/agents/email-management.tsx');
   assert.match(email, /async function loadMessages\(nextFilter = filter, sync = false\)/);

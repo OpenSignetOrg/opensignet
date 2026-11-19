@@ -48,7 +48,8 @@ export function assertWalletBackdropCss(stylesheets: readonly string[]): void {
   for (const css of stylesheets) {
     postcss.parse(css).walkRules('.opensignet-wallet-backdrop', (rule) => {
       rule.walkDecls('backdrop-filter', (declaration) => {
-        if (declaration.value === 'blur(12px)') standardBlur = true;
+        // Any real blur counts; the check is that the unprefixed property survives the build.
+        if (/^blur\((?!0(?:px)?\))\d+(?:\.\d+)?px\)$/.test(declaration.value)) standardBlur = true;
       });
     });
   }

@@ -77,9 +77,12 @@ interface EmailLimitInfo {
 
 export function EmailManagement({
   agentId,
+  domain,
   inbox,
 }: {
   agentId: string;
+  /** The identity's domain, for the address shown while the inbox is being set up. */
+  domain: string;
   inbox: EmailInboxRow | null;
 }) {
   const { signedIn, requireSignIn, sessionEnded } = useManagementSession();
@@ -505,23 +508,7 @@ export function EmailManagement({
   }
 
   if (!inboxStatus) {
-    return (
-      <Card className="premium-surface mb-6">
-        <CardContent className="p-4 sm:p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary">
-              <Mail className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <div>
-              <h2 className="font-semibold">Email</h2>
-              <p className="text-sm text-muted-foreground">
-                Included email provisioning is not ready yet.
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
+    return <InboxSettingUp domain={domain} />;
   }
 
   return (
@@ -1219,4 +1206,60 @@ function readLocalPart(emailAddress: string): string {
 
 function readDomainPart(emailAddress: string): string {
   return emailAddress.split('@')[1] ?? '';
+}
+
+/** Shown until the identity's inbox exists: the address it will have and what it will offer. */
+function InboxSettingUp({ domain }: { domain: string }) {
+  return (
+    <section
+      aria-labelledby="inbox-setting-up"
+      className="premium-surface mb-6 overflow-hidden rounded-xl border"
+    >
+      <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="flex min-w-0 items-center gap-3.5">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border/80 bg-background/60 shadow-[inset_0_1px_0_hsl(0_0%_100%/0.8)]">
+            <Mail className="h-5 w-5 text-foreground/80" strokeWidth={1.75} aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <h2 id="inbox-setting-up" className="text-[15px] font-semibold">
+              Your inbox
+            </h2>
+            <p className="wrap-anywhere text-[14px] text-muted-foreground">hello@{domain}</p>
+          </div>
+        </div>
+        <span className="inline-flex h-6 shrink-0 items-center gap-1.5 self-start rounded-full border border-border/80 bg-card/80 px-2.5 text-[12px] font-medium text-foreground/85 sm:self-center">
+          <span
+            aria-hidden
+            className="h-1.5 w-1.5 animate-pulse rounded-full bg-[hsl(32_90%_50%)] motion-reduce:animate-none"
+          />
+          Setting up
+        </span>
+      </div>
+      <p className="border-t border-border/60 px-5 py-4 text-[14px] leading-6 text-muted-foreground sm:px-6">
+        The inbox for this identity is being prepared, and its mail records are added to your DNS
+        automatically. It opens here as soon as it is ready; there is nothing you need to do.
+      </p>
+      <ul className="grid gap-px border-t border-border/60 bg-border/60 sm:grid-cols-3">
+        {[
+          {
+            icon: Inbox,
+            title: 'Inbox',
+            body: 'Read and reply in the browser, or connect your agent.',
+          },
+          { icon: Send, title: 'Sending API', body: 'Send from your own domain with an API key.' },
+          {
+            icon: AtSign,
+            title: 'Addresses',
+            body: 'Choose the main address and add aliases on paid plans.',
+          },
+        ].map(({ icon: Icon, title, body }) => (
+          <li key={title} className="bg-[hsl(var(--console-surface))] px-5 py-4 sm:px-6">
+            <Icon className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} aria-hidden />
+            <h3 className="mt-2.5 text-[13.5px] font-semibold">{title}</h3>
+            <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">{body}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }

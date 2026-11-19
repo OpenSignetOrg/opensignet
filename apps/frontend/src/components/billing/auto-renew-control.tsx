@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { ApprovalSummary } from '@/components/wallet/approval-summary';
 import { VaultApprovalDialog } from '@/components/wallet/vault-approval-dialog';
 import { AccountError, createAccountClient } from '@/lib/account-client';
 import type { WalletApprover } from '@/lib/account-contract';
@@ -22,10 +23,6 @@ import {
 function dollars(atomic: string): string {
   const cents = Number(BigInt(atomic) / 10_000n);
   return `$${(cents / 100).toFixed(2)}`;
-}
-
-function perPeriod(terms: MandateTerms): string {
-  return `${dollars(terms.value)} / ${terms.periodSeconds >= 365 * 86_400 ? 'year' : 'month'}`;
 }
 
 /**
@@ -137,16 +134,19 @@ export function AutoRenewControl({
           }}
           onClose={() => setTerms(null)}
         >
-          <div className="mb-4 rounded-xl border border-border/80 bg-background/50 px-3.5 py-3 text-sm">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="font-medium">{terms.summary}</span>
-              <span className="shrink-0 font-mono font-semibold">{perPeriod(terms)}</span>
-            </div>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Up to {terms.count} renewals, each paid in USDC from your OpenSignet wallet to
-              OpenSignet only within a few days of its date. You can turn this off at any time.
-            </p>
-          </div>
+          <ApprovalSummary
+            icon={RefreshCcw}
+            title={terms.summary}
+            subtitle={`Up to ${terms.count} renewals`}
+            amount={dollars(terms.value)}
+            amountNote={terms.periodSeconds >= 365 * 86_400 ? 'a year' : 'a month'}
+            rows={[
+              { label: 'From', value: 'Your OpenSignet wallet' },
+              { label: 'To', value: 'OpenSignet' },
+              { label: 'Paid in', value: 'USDC on Base' },
+            ]}
+            note="Each renewal can only be charged within a few days of its date. Turn it off at any time and every unused one is cancelled."
+          />
         </VaultApprovalDialog>
       ) : null}
 
