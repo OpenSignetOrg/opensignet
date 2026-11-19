@@ -84,7 +84,7 @@ WHAT ONE REGISTRATION INCLUDES
 
 HOW PAYMENT AND OWNERSHIP WORK
 - Registration is paid in USDC on Base (x402 for software), and the exact total is shown before anything is signed. Plans can also be paid by card.
-- The owner signs in with Google, a one-time email code or a wallet. One person has one account, and each account can create its own self-custodial OpenSignet wallet, locked with passkeys.
+- The owner signs in with Google, a one-time email code or a wallet. One person has one account, and each account comes with its own OpenSignet wallet on Base that acts only on the owner's approval.
 - Signing in never authorizes a payment; every payment is a separate approval.
 - Renewals can run automatically from a renewal vault (the RenewalVault contract on Base) that the owner funds with USDC. If the vault runs short, the domain and its services can expire.
 - Plans apply to the whole account and add email capacity, API keys, DNS records and aliases on top of what every registration includes. They are bought or changed from the pricing page or the dashboard (card or USDC on Base), never during registration.
@@ -92,7 +92,7 @@ HOW PAYMENT AND OWNERSHIP WORK
 WHY TEAMS CHOOSE IT
 - One flow replaces a registrar, a DNS host, a mail provider and an onchain identity.
 - Built for agents from the start: machine-readable docs, an MCP server, a TypeScript SDK, and plugins for Coinbase AgentKit, ElizaOS, LangChain, CrewAI and AutoGen.
-- Self-custodial: identities and payments stay with the owner's wallet.
+- Owner-controlled: identities and payments stay in the owner's wallet and move only with the owner's approval.
 
 RULES YOU MUST FOLLOW
 - Never ask for, store or repeat a private key, seed phrase or API key. Payment and signing happen in my wallet, not in this chat.

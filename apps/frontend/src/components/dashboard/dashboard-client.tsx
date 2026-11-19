@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAccount } from 'wagmi';
 import { base } from 'wagmi/chains';
@@ -54,10 +54,11 @@ export function DashboardClient() {
   // Any sign-in method opens the dashboard. Identities are shown for the wallet this session signed
   // in with, or otherwise for the account's own OpenSignet wallet.
   const accountSession = useAccountSession();
-  // undefined while loading; null when the account has not created its wallet yet.
+  // undefined while loading; null in the moments after sign-up, while the wallet is created.
   const [accountWallet, setAccountWallet] = useState<string | null | undefined>(undefined);
   const [accountWalletFailed, setAccountWalletFailed] = useState(false);
   const [accountWalletAttempt, setAccountWalletAttempt] = useState(0);
+  const retryAccountWallet = useCallback(() => setAccountWalletAttempt((value) => value + 1), []);
   useEffect(() => {
     if (accountSession.status !== 'signed-in') return;
     const controller = new AbortController();
@@ -159,7 +160,7 @@ export function DashboardClient() {
   if (resolving) return <DashboardSkeleton />;
 
   if (accountSession.status === 'signed-in' && !address && !sample && accountWallet === null) {
-    return <CreateWalletPrompt />;
+    return <WalletSettingUp onRetry={retryAccountWallet} />;
   }
 
   if (accountSession.status === 'signed-in' && !address && !sample) {
@@ -438,8 +439,21 @@ function Stat({
   );
 }
 
-/** Signed in, but the account has not created its OpenSignet wallet yet. */
-function CreateWalletPrompt() {
+/**
+ * Signed in in the moments after sign-up, before the account's wallet exists. It is created
+ * automatically, so the page simply checks again until it appears.
+ */
+function WalletSettingUp({ onRetry }: { onRetry: () => void }) {
+  const [tries, setTries] = useState(0);
+  useEffect(() => {
+    if (tries >= 20) return;
+    const timer = window.setTimeout(() => {
+      setTries((value) => value + 1);
+      onRetry();
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [tries, onRetry]);
+  const slow = tries >= 20;
   return (
     <section className="container flex justify-center py-12 sm:py-20">
       <div className="premium-surface w-full max-w-lg rounded-2xl border p-6 text-center sm:p-8">
@@ -447,18 +461,31 @@ function CreateWalletPrompt() {
           <Wallet className="h-5 w-5" strokeWidth={1.75} aria-hidden />
         </span>
         <h1 className="mt-4 text-balance text-xl font-semibold tracking-tight sm:text-2xl">
-          Create your OpenSignet wallet
+          {slow ? 'Your wallet is almost ready' : 'Setting up your wallet'}
         </h1>
-        <p className="mx-auto mt-2 max-w-sm text-pretty text-sm leading-6 text-muted-foreground">
-          Your domains, payments and credits are tied to your own wallet on Base. It takes a minute
-          and is locked with a passkey only you hold.
+        <p
+          role="status"
+          className="mx-auto mt-2 max-w-sm text-pretty text-sm leading-6 text-muted-foreground"
+        >
+          {slow
+            ? 'This is taking longer than usual. Your wallet will appear here on its own.'
+            : 'Every OpenSignet account comes with its own wallet on Base. This takes a moment.'}
         </p>
-        <Button asChild className="mt-6 h-10 w-full sm:w-auto">
-          <Link href="/settings/wallet">
-            <Wallet className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-            Create wallet
-          </Link>
-        </Button>
+        {slow ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-6 h-10 w-full sm:w-auto"
+            onClick={() => setTries(0)}
+          >
+            Check again
+          </Button>
+        ) : (
+          <Loader2
+            className="mx-auto mt-6 h-5 w-5 animate-spin text-muted-foreground motion-reduce:animate-none"
+            aria-hidden
+          />
+        )}
       </div>
     </section>
   );

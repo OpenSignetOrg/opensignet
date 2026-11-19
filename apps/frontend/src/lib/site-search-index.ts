@@ -90,7 +90,7 @@ const PAGES: ReadonlyArray<Omit<SiteSearchEntry, 'id' | 'kind'>> = [
     context: 'Legal',
     href: '/terms',
     summary:
-      'Your account, the self-custodial wallet, domains, payments, renewals and acceptable use.',
+      'Your account, your OpenSignet wallet, domains, payments, renewals and acceptable use.',
     keywords: 'terms conditions legal refund refunds agreement wallet acceptable use',
   },
   {

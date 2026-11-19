@@ -6,8 +6,8 @@ const POINTS = [
     body: 'Google, a one-time email code or a wallet, all linked to one account.',
   },
   {
-    title: 'A wallet only you hold',
-    body: 'Self-custodial and unlocked with passkeys, with a recovery kit and export at any time.',
+    title: 'Your wallet, your approval',
+    body: 'Created with your account. Nothing moves without your approval, and you can export the key at any time.',
   },
   {
     title: 'Access with clear limits',

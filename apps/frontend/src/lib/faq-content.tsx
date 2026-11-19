@@ -120,7 +120,7 @@ export const SUPPORT_FAQS: readonly FaqItem[] = [
   {
     question: 'How do I sign in?',
     answer:
-      'With Google, a one-time code sent to your email, or a wallet. You can link more than one to the same account in Settings, and set up your own OpenSignet wallet there, protected by a passkey on your device.',
+      'With Google, a one-time code sent to your email, or a wallet. You can link more than one to the same account in Settings. Every account also comes with its own OpenSignet wallet, and nothing moves from it without your approval.',
   },
   {
     question: 'My registration is still processing. What should I do?',

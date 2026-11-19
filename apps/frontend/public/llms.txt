@@ -12,7 +12,7 @@ within the authority their owners grant.
 - [Pricing](https://opensignet.com/pricing): The Free plan and the Plus, Pro, Max and Enterprise plans, which apply to the whole account; plans are paid by card or in USDC on Base.
 - [Register](https://opensignet.com/register): Search a domain, choose a stack and register it, paid in USDC on Base.
 - [Support](https://opensignet.com/support): Email support, guides, connecting AI tools and security reports.
-- [Sign in](https://opensignet.com/sign-in): Google, a one-time email code or a wallet; each account can set up its own passkey-protected wallet.
+- [Sign in](https://opensignet.com/sign-in): Google, a one-time email code or a wallet; every account comes with its own wallet that acts only on the owner's approval.
 
 ## Capabilities
 

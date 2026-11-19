@@ -5,16 +5,28 @@ import {
   accountSessionsSchema,
   accountSettingsSchema,
   walletTokenSchema,
+  walletViewSchema,
+  vaultChallengeSchema,
+  vaultKeySchema,
   nonceSchema,
   type AccountErrorCode,
   type AccountSession,
   type AccountSettings,
+  type EmbeddedWallet,
+  type VaultChallenge,
 } from './account-contract';
 import { emailChallengeSchema, signInErrorCodes, type EmailChallenge } from './sign-in-contract';
 import { signInErrorMessage, type SignInFailure } from './sign-in-client';
 import { API_TIMEOUT_MS } from './transport-policy';
 
 export type AccountFailure = SignInFailure | AccountErrorCode;
+
+/** A code or signature sealed to the vault's key in this browser (see vault-seal.ts). */
+export interface SealedProof {
+  epk: string;
+  iv: string;
+  ciphertext: string;
+}
 
 const errorBodySchema = z
   .object({
@@ -63,22 +75,18 @@ export function accountErrorMessage(
       return 'Use a PNG, JPG or WebP image up to 5 MB.';
     case 'wallet_not_empty':
       return 'Move the funds out of your OpenSignet wallet before deleting your account.';
-    case 'wallet_exists':
-      return 'Your OpenSignet wallet is already set up.';
+    case 'wrong_signature':
+      return 'That signature isn’t from the wallet linked to your account. Sign with that wallet.';
+    case 'approval_required':
+      return 'This approval has expired or was already used. Start again.';
+    case 'no_approver':
+      return 'There’s no way to approve this yet. Add an email or link a wallet first.';
+    case 'wallet_unavailable':
+      return 'Your wallet is unavailable right now. Nothing has changed; try again in a moment.';
     default:
       return signInErrorMessage(code, details);
   }
 }
-
-export type WalletWindowPurpose = 'setup' | 'export' | 'add_passkey' | 'recovery_kit' | 'recover';
-
-const WALLET_WINDOW_PATHS: Record<WalletWindowPurpose, string> = {
-  setup: 'setup',
-  export: 'export',
-  add_passkey: 'passkeys',
-  recovery_kit: 'recovery-kit',
-  recover: 'recover',
-};
 
 export interface AccountClient {
   get(signal?: AbortSignal): Promise<AccountSettings>;
@@ -99,8 +107,15 @@ export interface AccountClient {
   stepUpEmailVerify(code: string): Promise<void>;
   stepUpWalletNonce(): Promise<string>;
   stepUpWallet(message: string, signature: string): Promise<void>;
-  /** Single-use tokens for the wallet window (setup, export, backup passkey). */
-  walletWindowToken(purpose: WalletWindowPurpose): Promise<string>;
+  wallet(signal?: AbortSignal): Promise<EmbeddedWallet | null>;
+  /** The vault's public key, which approval proofs are sealed to. */
+  vaultKey(): Promise<string>;
+  startApproverChange(factor: 'email' | 'wallet'): Promise<VaultChallenge>;
+  /** Relays a proof sealed in this browser; nothing on the way can read it. */
+  completeApproval(challengeId: string, proof: SealedProof): Promise<void>;
+  applyApproverChange(challengeId: string): Promise<EmbeddedWallet | null>;
+  /** Single-use token for the wallet window's export. */
+  walletExportToken(): Promise<string>;
   deleteAccount(): Promise<void>;
   signOut(): Promise<void>;
 }
@@ -190,9 +205,19 @@ export function createAccountClient(fetcher: typeof fetch = fetch): AccountClien
       (await call('auth/step-up/wallet/nonce', 'GET', nonceSchema)).nonce,
     stepUpWallet: (message, signature) =>
       call('auth/step-up/wallet', 'POST', empty, { message, signature }).then(() => undefined),
-    walletWindowToken: async (purpose) =>
-      (await call(`wallet/${WALLET_WINDOW_PATHS[purpose]}/start`, 'POST', walletTokenSchema, {}))
-        .token,
+    wallet: async (signal) =>
+      (await call('wallet', 'GET', walletViewSchema, undefined, signal)).wallet,
+    vaultKey: async () => (await call('wallet/vault-key', 'GET', vaultKeySchema)).publicKey,
+    startApproverChange: (factor) =>
+      call('wallet/approvers/start', 'POST', vaultChallengeSchema, { factor }),
+    completeApproval: (challengeId, proof) =>
+      call(`wallet/approvals/${encodeURIComponent(challengeId)}/complete`, 'POST', empty, {
+        proof,
+      }).then(() => undefined),
+    applyApproverChange: async (challengeId) =>
+      (await call('wallet/approvers', 'POST', walletViewSchema, { challengeId })).wallet,
+    walletExportToken: async () =>
+      (await call('wallet/export/start', 'POST', walletTokenSchema, {})).token,
     deleteAccount: () => call('account', 'DELETE', empty).then(() => undefined),
     signOut: () => call('auth/session', 'DELETE', empty).then(() => undefined),
   };

@@ -49,10 +49,10 @@ const sections: readonly LegalSection[] = [
               signatures you give to prove you control them.
             </>,
             <>
-              <strong>Your OpenSignet wallet.</strong> Its public address, a locked copy of its
-              private key that only your passkeys can open, and identifiers of those passkeys. We
-              never receive the private key, your passkeys or any biometric data; fingerprint and
-              face checks stay on your device.
+              <strong>Your OpenSignet wallet.</strong> Its public address, its private key kept
+              encrypted in our isolated wallet vault, the approvals you give for its actions, and a
+              tamper-evident log of what the vault did. No person at OpenSignet can view the private
+              key.
             </>,
             <>
               <strong>Sign-in and security.</strong> One-time codes, which we store only in hashed
@@ -85,7 +85,7 @@ const sections: readonly LegalSection[] = [
           'To create and run your account and the services you order.',
           'To sign you in, keep your account secure and show you the devices that are signed in.',
           'To prevent fraud, spam and abuse, including limits on how often codes can be sent.',
-          'To send sign-in codes and security notices, such as a new sign-in method, a wallet export or a new passkey. These cannot be turned off while your account exists.',
+          'To send sign-in codes and security notices, such as a new sign-in method, a wallet export or a change to who approves your wallet. These cannot be turned off while your account exists.',
           'To send product news only if you choose to receive it. Every such email has an unsubscribe link.',
           'To meet legal, tax and accounting obligations and to enforce our Terms of Service.',
         ]}

@@ -8,7 +8,7 @@ import { createPageMetadata } from '@/lib/seo';
 export const metadata: Metadata = createPageMetadata({
   title: 'Terms of Service',
   description:
-    'The agreement for using OpenSignet: accounts and sign-in, the self-custodial wallet, domains, DNS and email, plans and payments, renewals and acceptable use.',
+    'The agreement for using OpenSignet: accounts and sign-in, your OpenSignet wallet, domains, DNS and email, plans and payments, renewals and acceptable use.',
   path: '/terms',
 });
 
@@ -51,9 +51,7 @@ const sections: readonly LegalSection[] = [
             'Tell us promptly if you believe your account has been accessed without permission.',
           ]}
         />
-        <p>
-          OpenSignet will never ask for your private key, recovery phrase, passkey or one-time code.
-        </p>
+        <p>OpenSignet will never ask for your private key, recovery phrase or one-time code.</p>
       </>
     ),
   },
@@ -63,20 +61,20 @@ const sections: readonly LegalSection[] = [
     body: (
       <>
         <p>
-          Your account can include a self-custodial wallet on Base. Its private key is created on
-          your device and locked with your passkeys. We store only the locked copy, which we cannot
-          open.
+          Every account includes a wallet on Base, created with the account. Its private key is
+          created and kept encrypted in our isolated wallet vault, which uses it only for actions
+          you approve with a code sent to your email or a signature from your linked wallet.
         </p>
         <LegalList
           items={[
             <>
-              <strong>Only you control it.</strong> We cannot view, move, freeze or recover your
-              funds, and we cannot reset your passkeys.
+              <strong>Nothing moves without your approval.</strong> We cannot view your private key
+              or move your funds on our own, and our staff have no access to either.
             </>,
             <>
-              <strong>Keep a backup.</strong> Add a backup passkey and keep any recovery materials
-              we offer safe. If you lose every way to unlock the wallet, its funds cannot be
-              recovered.
+              <strong>Keep your approvals safe.</strong> Keep access to your account email and your
+              linked wallet, and export your key to keep your own backup. If you lose every way to
+              approve, we may be unable to restore access to the wallet’s funds.
             </>,
             <>
               <strong>Transactions are final.</strong> Blockchain transfers cannot be reversed.

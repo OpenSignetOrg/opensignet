@@ -26,17 +26,19 @@ import { DISPLAY_NAME_MAX_LENGTH, EMAIL_MAX_LENGTH } from './sign-in-contract';
  *   POST   /api/v1/auth/step-up/email/verify { code } -> 204
  *   GET    /api/v1/auth/step-up/wallet/nonce       -> { nonce }
  *   POST   /api/v1/auth/step-up/wallet { message, signature } -> 204
- *   POST   /api/v1/wallet/setup/start              -> { token }   opens the wallet window to create the wallet
+ *   GET    /api/v1/wallet                          -> { wallet: EmbeddedWallet | null }
+ *   GET    /api/v1/wallet/vault-key                -> { publicKey, attestation }
+ *   POST   /api/v1/wallet/approvers/start { factor } -> VaultChallenge   approve the current email and wallet as approvers
+ *   POST   /api/v1/wallet/approvals/:id/complete { proof } -> 204       sealed code or signature
+ *   POST   /api/v1/wallet/approvers { challengeId } -> { wallet }
  *   POST   /api/v1/wallet/export/start             -> { token }   opens the wallet window to export the key
- *   POST   /api/v1/wallet/passkeys/start           -> { token }   opens the wallet window to add a backup passkey
- *   POST   /api/v1/wallet/recovery-kit/start       -> { token }   opens the wallet window to create the recovery kit
- *   POST   /api/v1/wallet/recover/start            -> { token }   (step-up) restores access with the recovery kit
  *   DELETE /api/v1/account                         -> 204   (step-up; the wallet must be empty)
  *
- * The OpenSignet wallet is self-custodial: its key is created and locked with the person's
- * passkeys inside the wallet window, a popup on its own origin. The single-use token travels in
- * that window's URL fragment; the site never sees the key, and the window reports back only
- * through an origin-checked message (see wallet-window.ts).
+ * Every account gets its OpenSignet wallet automatically, moments after it is created. Its key is
+ * held by the wallet vault, which acts only on approvals it checks itself: a code it emails to the
+ * account, or a signature from the linked wallet. The browser seals those proofs to the vault's
+ * key, so nothing in between can read them. Export happens in the wallet window, a popup on its own
+ * origin that receives the key encrypted to a one-time key of its own (see wallet-window.ts).
  */
 
 const isoDate = z.string().datetime({ offset: true });
@@ -62,17 +64,46 @@ export const accountSettingsSchema = z
       .strict()
       .nullable(),
     externalWallet: z.object({ address, linkedAt: isoDate }).strict().nullable(),
-    /** Null until the person creates their wallet. `passkeys` counts the passkeys that unlock it. */
-    embeddedWallet: z
-      .object({
-        address,
-        passkeys: z.number().int().min(0).max(50),
-        /** Whether a recovery kit can restore the wallet if every passkey is lost. */
-        recoveryKit: z.boolean(),
-      })
-      .strict()
-      .nullable(),
+    /** Null only in the moments after sign-up, while the wallet is being created. */
+    embeddedWallet: z.lazy(() => embeddedWalletSchema).nullable(),
     createdAt: isoDate,
+  })
+  .strict();
+
+export const walletApproverSchema = z
+  .object({
+    kind: z.enum(['email', 'wallet']),
+    /** A partly hidden email, or the checksummed wallet address. */
+    display: z.string().min(1).max(260),
+  })
+  .strict();
+
+export const embeddedWalletSchema = z
+  .object({
+    address,
+    /** Who approves this wallet's actions; null when the vault can't be reached. */
+    approvers: z.array(walletApproverSchema).max(3).nullable(),
+    /** False after the email or linked wallet changed, until the old approvers confirm it. */
+    approversInSync: z.boolean().nullable(),
+  })
+  .strict();
+
+export const walletViewSchema = z.object({ wallet: embeddedWalletSchema.nullable() }).strict();
+
+export const vaultKeySchema = z
+  .object({ publicKey: z.string().min(80).max(100), attestation: z.unknown().nullable() })
+  .strict();
+
+export const vaultChallengeSchema = z
+  .object({
+    challengeId: z.string().uuid(),
+    factor: z.enum(['email', 'wallet']),
+    sentTo: z.string().min(1).max(260),
+    /** The exact text the approver wallet signs (wallet approvals only). */
+    message: z.string().max(2000).nullable(),
+    browserCheck: z.string().max(20).nullable(),
+    wallet: address,
+    expiresAt: isoDate,
   })
   .strict();
 
@@ -106,11 +137,17 @@ export const accountErrorCodes = [
   'avatar_limit',
   'invalid_image',
   'wallet_not_empty',
-  'wallet_exists',
+  'wrong_signature',
+  'approval_required',
+  'no_approver',
+  'wallet_unavailable',
 ] as const;
 
 export type AccountSettings = z.infer<typeof accountSettingsSchema>;
 export type AccountSession = z.infer<typeof accountSessionSchema>;
+export type EmbeddedWallet = z.infer<typeof embeddedWalletSchema>;
+export type WalletApprover = z.infer<typeof walletApproverSchema>;
+export type VaultChallenge = z.infer<typeof vaultChallengeSchema>;
 export type AccountErrorCode = (typeof accountErrorCodes)[number];
 
 export const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
