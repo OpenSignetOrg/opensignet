@@ -145,10 +145,27 @@ const sections: readonly LegalSection[] = [
           set up, within the limits you approved, shortly before the end of each period. You can
           turn it off at any time.
         </p>
+        <LegalList
+          items={[
+            <>
+              <strong>Plans paid by card</strong> renew on that card through Stripe.
+            </>,
+            <>
+              <strong>Plans paid in USDC</strong> renew from your OpenSignet wallet only if you turn
+              automatic renewal on. You approve a set number of exact payments, each usable only in
+              the few days around its renewal date. Turning it off cancels every unused payment.
+            </>,
+            <>
+              <strong>Reminders.</strong> We email you 14, 7 and 1 day before a USDC renewal, with
+              the amount and what to add if your wallet holds too little.
+            </>,
+          ]}
+        />
         <p>
-          If a renewal is off or cannot be paid, the service expires at the end of its period. An
-          expired domain can be lost to another registrant, and the mail, DNS and identity linked to
-          it stop working.
+          If a renewal is off or cannot be paid, the service expires at the end of its period. A
+          plan paid in USDC stays usable for 7 days after a missed renewal, then ends. An expired
+          domain can be lost to another registrant, and the mail, DNS and identity linked to it stop
+          working.
         </p>
       </>
     ),

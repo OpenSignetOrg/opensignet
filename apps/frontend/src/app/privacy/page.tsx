@@ -50,9 +50,9 @@ const sections: readonly LegalSection[] = [
             </>,
             <>
               <strong>Your OpenSignet wallet.</strong> Its public address, its private key kept
-              encrypted in our isolated wallet vault, the approvals you give for its actions, and a
-              tamper-evident log of what the vault did. No person at OpenSignet can view the private
-              key.
+              encrypted in our isolated wallet vault, the approvals you give for its actions
+              (including the renewal payments you approve in advance), and a tamper-evident log of
+              what the vault did. No person at OpenSignet can view the private key.
             </>,
             <>
               <strong>Sign-in and security.</strong> One-time codes, which we store only in hashed

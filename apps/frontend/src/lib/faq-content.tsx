@@ -93,7 +93,7 @@ export const PRICING_FAQS: readonly FaqItem[] = [
   {
     question: 'How do renewals work?',
     answer:
-      'Turn on auto-renew when you register, or later from your dashboard, and your domain renews before it expires. If a renewal cannot be paid, the domain and its services can expire, so keep your renewal payment ready.',
+      'Plans paid by card renew on the card. Plans paid in USDC renew from your OpenSignet wallet when you turn on automatic renewal in your dashboard: you approve the exact payments once, and we remind you 14, 7 and 1 day before each one. Domains renew before they expire when auto-renew is on. If a renewal cannot be paid, the service can expire, so keep enough in your wallet.',
   },
   {
     question: 'Are payments refundable?',

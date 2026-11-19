@@ -6,6 +6,8 @@ import { useSearchParams } from 'next/navigation';
 import { ArrowRight, CircleCheck, CircleX, Clock, Loader2 } from 'lucide-react';
 import { SERVICE_PLAN_CATALOG } from '@opensignet/shared';
 import { Button } from '@/components/ui/button';
+import { AutoRenewControl } from '@/components/billing/auto-renew-control';
+import { fetchAccountPlan, type AccountPlan } from '@/lib/account-plan';
 import {
   CheckoutError,
   checkoutPath,
@@ -96,6 +98,7 @@ export function CheckoutCompleteClient() {
       >
         Payment confirmed. Your {label} plan is active on your account and billed{' '}
         {view.result.period}.
+        <RenewalOffer />
       </Panel>
     );
   }
@@ -170,6 +173,24 @@ export function CheckoutCompleteClient() {
   );
 }
 
+/** After a USDC payment, the plan can be set to renew from the wallet right here. */
+function RenewalOffer() {
+  const [plan, setPlan] = useState<AccountPlan | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchAccountPlan(controller.signal)
+      .then(setPlan)
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+  if (!plan || plan.paymentMethod === 'card' || !plan.paymentMethod) return null;
+  return (
+    <span className="mt-5 block rounded-xl border border-border/70 bg-background/50 px-4 py-1 text-left">
+      <AutoRenewControl plan={plan} onChange={setPlan} />
+    </span>
+  );
+}
+
 function Panel({
   icon,
   title,
@@ -192,7 +213,9 @@ function Panel({
         {icon}
       </span>
       <h1 className="mt-4 text-balance text-2xl font-bold tracking-tight">{title}</h1>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{children}</p>
+      <div className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+        {children}
+      </div>
       {action ? <div className="mt-6 flex justify-center">{action}</div> : null}
     </div>
   );

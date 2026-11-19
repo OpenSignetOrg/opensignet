@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowUpRight, CreditCard, Loader2, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { AutoRenewControl } from '@/components/billing/auto-renew-control';
 import { AccountPlanError, fetchAccountPlan, planName, type AccountPlan } from '@/lib/account-plan';
 import { formatDate } from '@/lib/utils';
 
@@ -79,6 +80,17 @@ export function PlanSummary({ sample }: { sample?: AccountPlan | null }) {
                     ? `${plan.cancelAtPeriodEnd ? 'Ends' : 'Renews'} ${formatDate(plan.currentPeriodEnd)}${plan.period ? `, billed ${plan.period}` : ''}. Covers every identity in your account.`
                     : 'Covers every identity in your account.'}
               </p>
+              {plan.scheduled ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Changes to{' '}
+                  {planName(
+                    plan.scheduled.sku.split('-')[0] as AccountPlan['plan'],
+                    plan.scheduled.sku,
+                  )}
+                  , billed {plan.scheduled.period}, on {formatDate(plan.scheduled.startsAt)}.
+                </p>
+              ) : null}
+              {!sample ? <AutoRenewControl plan={plan} onChange={setPlan} /> : null}
             </>
           )}
         </div>

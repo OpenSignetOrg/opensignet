@@ -19,6 +19,13 @@ import {
 import { emailChallengeSchema, signInErrorCodes, type EmailChallenge } from './sign-in-contract';
 import { signInErrorMessage, type SignInFailure } from './sign-in-client';
 import { API_TIMEOUT_MS } from './transport-policy';
+import {
+  cancellationsSchema,
+  signedRenewalsSchema,
+  type Cancellations,
+  type MandateTerms,
+  type SignedRenewals,
+} from './auto-renew';
 
 export type AccountFailure = SignInFailure | AccountErrorCode;
 
@@ -124,6 +131,12 @@ export interface AccountClient {
   ): Promise<VaultChallenge>;
   /** The vault's signature for an approved payment. */
   signWalletPayment(challengeId: string): Promise<string>;
+  /** Asks for an approval to turn automatic renewal on (the exact renewals in `terms`). */
+  startMandate(factor: 'email' | 'wallet', mandate: MandateTerms): Promise<VaultChallenge>;
+  /** The pre-signed renewals for an approved mandate. */
+  signMandate(challengeId: string): Promise<SignedRenewals>;
+  /** Signs cancellations of unused renewal payments (turning automatic renewal off). */
+  cancelAuthorizations(nonces: string[]): Promise<Cancellations>;
   deleteAccount(): Promise<void>;
   signOut(): Promise<void>;
 }
@@ -228,6 +241,17 @@ export function createAccountClient(fetcher: typeof fetch = fetch): AccountClien
       (await call('wallet/export/start', 'POST', walletTokenSchema, {})).token,
     startWalletPayment: (factor, payment) =>
       call('wallet/payments/start', 'POST', vaultChallengeSchema, { factor, payment }),
+    startMandate: (factor, mandate) =>
+      call('wallet/mandates/start', 'POST', vaultChallengeSchema, { factor, mandate }),
+    signMandate: (challengeId) =>
+      call(
+        `wallet/mandates/${encodeURIComponent(challengeId)}/sign`,
+        'POST',
+        signedRenewalsSchema,
+        {},
+      ),
+    cancelAuthorizations: (nonces) =>
+      call('wallet/authorizations/cancel', 'POST', cancellationsSchema, { nonces }),
     signWalletPayment: async (challengeId) =>
       (
         await call(
