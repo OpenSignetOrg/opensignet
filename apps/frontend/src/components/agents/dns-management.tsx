@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   DNS_RECORD_TYPES,
   type DnsRecordData,
@@ -9,9 +9,15 @@ import {
 } from '@opensignet/shared';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { SelectMenu } from '@/components/ui/select-menu';
 import {
   AlertTriangle,
   Braces,
+  Check,
+  Copy,
+  Lock,
+  Search,
   Download,
   Edit2,
   FileCode2,
@@ -96,6 +102,48 @@ export function DnsManagement({
     return true;
   };
   const [records, setRecords] = useState<DnsRecord[]>(initialDns);
+  const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [recordLimit, setRecordLimit] = useState<number | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/v1/agents/${encodeURIComponent(agentId)}/plan`, {
+      credentials: 'include',
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((plan: { entitlement?: { limits?: { dnsRecords?: number } } } | null) => {
+        const limit = plan?.entitlement?.limits?.dnsRecords;
+        if (typeof limit === 'number') setRecordLimit(limit);
+      })
+      // The count still shows without the limit; nothing to tell the person.
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [agentId]);
+  const userRecords = useMemo(() => records.filter((r) => !r.systemManaged), [records]);
+  const systemRecords = useMemo(() => records.filter((r) => r.systemManaged), [records]);
+  const typeOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All types' },
+      ...DNS_RECORD_TYPES.filter((type) => records.some((r) => r.type === type)).map((type) => ({
+        value: type as string,
+        label: type as string,
+      })),
+    ],
+    [records],
+  );
+  const matches = (record: DnsRecord) => {
+    const text = query.trim().toLowerCase();
+    return (
+      (typeFilter === 'all' || record.type === typeFilter) &&
+      (!text ||
+        record.name.toLowerCase().includes(text) ||
+        record.value.toLowerCase().includes(text) ||
+        record.type.toLowerCase().includes(text))
+    );
+  };
+  const filteredUser = sortRecords(userRecords.filter(matches));
+  const filteredSystem = sortRecords(systemRecords.filter(matches));
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -378,163 +426,96 @@ export function DnsManagement({
   return (
     <Card className="premium-surface mb-6">
       <CardContent className="p-4 sm:p-6">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="font-semibold text-lg">DNS Records</h2>
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+        <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-[17px] font-semibold tracking-[-0.01em]">DNS records</h2>
+            <p className="mt-1 max-w-md text-[13.5px] leading-5 text-muted-foreground">
+              Served by OpenSignet nameservers. Saved changes go live within seconds.
+            </p>
+          </div>
+          <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:flex-nowrap lg:justify-end">
             <Button
-              variant="outline"
               size="sm"
-              onClick={exportZone}
-              className="w-full gap-2 sm:w-auto"
+              onClick={openAdd}
+              className="col-span-2 h-9 gap-1.5 rounded-lg sm:col-span-1"
             >
-              <Download className="h-4 w-4" /> Export
+              <Plus className="h-4 w-4" aria-hidden /> Add record
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => openBulk('zone')}
-              className="w-full gap-2 sm:w-auto"
+              className="h-9 gap-1.5 rounded-lg"
             >
-              <FileUp className="h-4 w-4" /> Import zone
+              <FileUp className="h-4 w-4" aria-hidden /> Import zone
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => openBulk('json')}
-              className="w-full gap-2 sm:w-auto"
+              className="h-9 gap-1.5 rounded-lg"
             >
-              <Layers3 className="h-4 w-4" /> Add multiple
+              <Layers3 className="h-4 w-4" aria-hidden /> Add multiple
             </Button>
             <Button
               variant="outline"
               size="sm"
-              onClick={openAdd}
-              className="w-full gap-2 sm:w-auto"
+              onClick={exportZone}
+              className="col-span-2 h-9 gap-1.5 rounded-lg sm:col-span-1"
             >
-              <Plus className="h-4 w-4" /> Add Record
+              <Download className="h-4 w-4" aria-hidden /> Export
             </Button>
           </div>
         </div>
 
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-muted-foreground uppercase tracking-wider">
-                <th className="pb-2 pr-4">Type</th>
-                <th className="pb-2 pr-4">Name</th>
-                <th className="pb-2 pr-4">Value</th>
-                <th className="pb-2 pr-4">TTL</th>
-                <th className="pb-2 pr-4">Managed</th>
-                <th className="pb-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {records.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="text-center py-6 text-muted-foreground">
-                    No DNS records found.
-                  </td>
-                </tr>
-              ) : (
-                records.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="border-t border-border/40 hover:bg-primary/5 transition-colors"
-                  >
-                    <td className="py-3 pr-4 font-mono text-xs">{r.type}</td>
-                    <td className="py-3 pr-4 font-mono text-xs truncate max-w-[150px]">{r.name}</td>
-                    <td
-                      className="py-3 pr-4 font-mono text-xs truncate max-w-[300px]"
-                      title={r.value}
-                    >
-                      {r.value}
-                    </td>
-                    <td className="py-3 pr-4 font-mono text-xs">{r.ttl}</td>
-                    <td className="py-3 pr-4 text-xs">
-                      {r.systemManaged ? (r.purpose ?? 'system') : 'user'}
-                    </td>
-                    <td className="py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => openEdit(r)}
-                          disabled={r.systemManaged}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/50 text-muted-foreground transition hover:bg-background hover:text-primary disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:text-muted-foreground"
-                          title={
-                            r.systemManaged ? 'System-managed DNS records are read-only' : 'Edit'
-                          }
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => requestDelete(r)}
-                          disabled={r.systemManaged}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-background/50 text-muted-foreground transition hover:bg-background hover:text-destructive disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:text-muted-foreground"
-                          title={
-                            r.systemManaged
-                              ? 'System-managed DNS records cannot be deleted'
-                              : 'Delete'
-                          }
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <label className="relative min-w-0 flex-1">
+            <span className="sr-only">Search records</span>
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search by name or value"
+              className="h-9 rounded-lg pl-9"
+            />
+          </label>
+          <SelectMenu
+            value={typeFilter}
+            options={typeOptions}
+            onChange={setTypeFilter}
+            ariaLabel="Filter by record type"
+            className="sm:w-44"
+          />
         </div>
 
-        <div className="space-y-3 md:hidden">
-          {records.length === 0 ? (
-            <div className="rounded-lg border border-border/40 py-6 text-center text-sm text-muted-foreground">
-              No DNS records found.
-            </div>
-          ) : (
-            records.map((r) => (
-              <div key={r.id} className="premium-surface rounded-lg border p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-md bg-muted px-2 py-1 font-mono text-xs">
-                        {r.type}
-                      </span>
-                      <span className="wrap-anywhere font-mono text-sm">{r.name}</span>
-                    </div>
-                    <div className="wrap-anywhere mt-2 font-mono text-xs text-muted-foreground">
-                      {r.value}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <button
-                      onClick={() => openEdit(r)}
-                      disabled={r.systemManaged}
-                      className="touch-target inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-primary disabled:pointer-events-none disabled:opacity-40"
-                      title={r.systemManaged ? 'System-managed DNS records are read-only' : 'Edit'}
-                    >
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => requestDelete(r)}
-                      disabled={r.systemManaged}
-                      className="touch-target inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-destructive disabled:pointer-events-none disabled:opacity-40"
-                      title={
-                        r.systemManaged ? 'System-managed DNS records cannot be deleted' : 'Delete'
-                      }
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>TTL {r.ttl}</span>
-                  <span>{r.systemManaged ? (r.purpose ?? 'system') : 'user'}</span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+        <RecordSection
+          title="Your records"
+          meta={
+            recordLimit === null
+              ? `${userRecords.length}`
+              : `${userRecords.length} of ${recordLimit}`
+          }
+          records={filteredUser}
+          emptyText={
+            userRecords.length === 0
+              ? 'No records yet. Add one, or import a zone file from your old DNS host.'
+              : 'No records match this search.'
+          }
+          onEdit={openEdit}
+          onDelete={requestDelete}
+        />
+        {systemRecords.length > 0 ? (
+          <RecordSection
+            title="Managed by OpenSignet"
+            meta="Read-only"
+            records={filteredSystem}
+            emptyText="No managed records match this search."
+            readOnly
+          />
+        ) : null}
 
         {/* Modal */}
         {isModalOpen && (
@@ -1607,4 +1588,221 @@ function showHostingTransitionToast(
     return;
   }
   toast.success(copy.title, { description: copy.description });
+}
+
+const TYPE_ORDER: readonly string[] = DNS_RECORD_TYPES;
+
+function sortRecords(list: DnsRecord[]): DnsRecord[] {
+  const owner = (name: string) => (name === '@' ? '' : name.split('.').reverse().join('.'));
+  return [...list].sort(
+    (a, b) =>
+      owner(a.name).localeCompare(owner(b.name)) ||
+      TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type) ||
+      a.value.localeCompare(b.value),
+  );
+}
+
+function shortTtl(ttl: number) {
+  if (ttl % 3600 === 0) return `${ttl / 3600} h`;
+  if (ttl % 60 === 0) return `${ttl / 60} min`;
+  return `${ttl} s`;
+}
+
+/** One group of records: a table from 768px, cards below. */
+function RecordSection({
+  title,
+  meta,
+  records,
+  emptyText,
+  readOnly = false,
+  onEdit,
+  onDelete,
+}: {
+  title: string;
+  meta: string;
+  records: DnsRecord[];
+  emptyText: string;
+  readOnly?: boolean;
+  onEdit?: (record: DnsRecord) => void;
+  onDelete?: (record: DnsRecord) => void;
+}) {
+  return (
+    <section aria-label={title} className="mb-5 last:mb-0">
+      <div className="mb-2 flex items-center justify-between gap-3 px-0.5">
+        <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground/90">
+          {readOnly ? <Lock className="h-3.5 w-3.5 text-muted-foreground" aria-hidden /> : null}
+          {title}
+        </h3>
+        <span className="text-[12.5px] tabular-nums text-muted-foreground">{meta}</span>
+      </div>
+      <div className="overflow-hidden rounded-xl border border-border/75">
+        {records.length === 0 ? (
+          <p className="px-4 py-8 text-center text-[13.5px] text-muted-foreground">{emptyText}</p>
+        ) : (
+          <>
+            <table className="hidden w-full table-fixed text-[13px] md:table">
+              <thead>
+                <tr className="border-b border-border/70 bg-foreground/[0.025] text-left text-[12px] font-medium text-muted-foreground">
+                  <th className="w-[84px] px-4 py-2.5 font-medium">Type</th>
+                  <th className="w-[26%] px-3 py-2.5 font-medium">Name</th>
+                  <th className="px-3 py-2.5 font-medium">Value</th>
+                  <th className="w-[72px] px-3 py-2.5 font-medium">TTL</th>
+                  <th className="w-[112px] px-4 py-2.5 text-right font-medium">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {records.map((record) => (
+                  <tr
+                    key={record.id}
+                    className="group border-b border-border/60 transition-colors last:border-b-0 hover:bg-foreground/[0.02]"
+                  >
+                    <td className="px-4 py-3 align-middle">
+                      <TypeBadge type={record.type} />
+                    </td>
+                    <td className="px-3 py-3 align-middle">
+                      <RecordName name={record.name} />
+                    </td>
+                    <td className="px-3 py-3 align-middle">
+                      <RecordValue value={record.value} />
+                    </td>
+                    <td
+                      className="px-3 py-3 align-middle tabular-nums text-muted-foreground"
+                      title={formatTtl(record.ttl)}
+                    >
+                      {shortTtl(record.ttl)}
+                    </td>
+                    <td className="px-4 py-3 text-right align-middle">
+                      {readOnly ? (
+                        <span className="text-[12px] text-muted-foreground">
+                          {record.purpose ?? 'managed'}
+                        </span>
+                      ) : (
+                        <RecordActions record={record} onEdit={onEdit} onDelete={onDelete} />
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <ul className="md:hidden">
+              {records.map((record) => (
+                <li
+                  key={record.id}
+                  className="border-b border-border/60 px-3.5 py-3 last:border-b-0"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <TypeBadge type={record.type} />
+                      <RecordName name={record.name} />
+                    </div>
+                    {readOnly ? (
+                      <span className="shrink-0 text-[12px] text-muted-foreground">
+                        {record.purpose ?? 'managed'}
+                      </span>
+                    ) : (
+                      <RecordActions record={record} onEdit={onEdit} onDelete={onDelete} />
+                    )}
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <RecordValue value={record.value} />
+                    <span className="shrink-0 text-[12px] tabular-nums text-muted-foreground">
+                      {shortTtl(record.ttl)}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TypeBadge({ type }: { type: string }) {
+  return (
+    <span className="inline-flex h-6 min-w-[3.25rem] items-center justify-center rounded-md border border-border/80 bg-background/70 px-1.5 font-mono text-[11.5px] font-semibold tracking-wide text-foreground/85">
+      {type}
+    </span>
+  );
+}
+
+function RecordName({ name }: { name: string }) {
+  if (name === '@') {
+    return (
+      <span className="inline-flex min-w-0 items-baseline gap-1.5 font-mono text-[13px]">
+        @<span className="font-sans text-[12px] text-muted-foreground">root</span>
+      </span>
+    );
+  }
+  return (
+    <span className="block min-w-0 truncate font-mono text-[13px]" title={name}>
+      {name}
+    </span>
+  );
+}
+
+function RecordValue({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error('Couldn’t copy', { description: 'Select the value and copy it instead.' });
+    }
+  }
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span className="min-w-0 truncate font-mono text-[13px] text-foreground/85" title={value}>
+        {value}
+      </span>
+      <button
+        type="button"
+        onClick={() => void copy()}
+        aria-label={copied ? 'Copied' : 'Copy value'}
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-100 transition hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-[hsl(143_45%_32%)]" aria-hidden />
+        ) : (
+          <Copy className="h-3.5 w-3.5" aria-hidden />
+        )}
+      </button>
+    </span>
+  );
+}
+
+function RecordActions({
+  record,
+  onEdit,
+  onDelete,
+}: {
+  record: DnsRecord;
+  onEdit?: (record: DnsRecord) => void;
+  onDelete?: (record: DnsRecord) => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center justify-end gap-1">
+      <button
+        type="button"
+        onClick={() => onEdit?.(record)}
+        aria-label={`Edit ${record.type} ${record.name}`}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+      >
+        <Edit2 className="h-3.5 w-3.5" aria-hidden />
+      </button>
+      <button
+        type="button"
+        onClick={() => onDelete?.(record)}
+        aria-label={`Delete ${record.type} ${record.name}`}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+      >
+        <Trash2 className="h-3.5 w-3.5" aria-hidden />
+      </button>
+    </div>
+  );
 }
