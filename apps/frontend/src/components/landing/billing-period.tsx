@@ -1,9 +1,11 @@
 'use client';
 
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Check } from 'lucide-react';
+import { ENTERPRISE_PLAN_OFFERS, SERVICE_PLAN_CATALOG } from '@opensignet/shared';
 import { Button } from '@/components/ui/button';
+import { fetchAccountPlan, type AccountPlan } from '@/lib/account-plan';
 import { cn } from '@/lib/utils';
 
 export type BillingPeriod = 'monthly' | 'yearly';
@@ -13,13 +15,69 @@ const BillingPeriodContext = createContext<{
   setPeriod: (period: BillingPeriod) => void;
 }>({ period: 'monthly', setPeriod: () => {} });
 
-/** Shares the Monthly / Yearly choice between the switch and every plan price. Monthly first. */
+/** The signed-in account's plan, or null for visitors (and until it loads). */
+const CurrentPlanContext = createContext<AccountPlan | null>(null);
+
+/**
+ * Shares the Monthly / Yearly choice between the switch and every plan price (monthly first, or
+ * the current plan's period for a signed-in account), and the account's current plan.
+ */
 export function BillingPeriodProvider({ children }: { children: ReactNode }) {
   const [period, setPeriod] = useState<BillingPeriod>('monthly');
+  const [current, setCurrent] = useState<AccountPlan | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchAccountPlan(controller.signal).then(
+      (plan) => {
+        setCurrent(plan);
+        if (plan.period) setPeriod(plan.period);
+      },
+      // Signed out, or unavailable: the page shows the plans as for any visitor.
+      () => undefined,
+    );
+    return () => controller.abort();
+  }, []);
   return (
     <BillingPeriodContext.Provider value={{ period, setPeriod }}>
-      {children}
+      <CurrentPlanContext.Provider value={current}>{children}</CurrentPlanContext.Provider>
     </BillingPeriodContext.Provider>
+  );
+}
+
+/** The SKU a plan card sells: null for Free, `plus`…`max`, or `enterprise-<emails>`. */
+type CardSku = string | null;
+
+function currentSku(plan: AccountPlan): CardSku {
+  return plan.plan === 'included' ? null : (plan.sku ?? plan.plan);
+}
+
+/** Price per day in USDC atomic units, to tell an upgrade from a downgrade. */
+function dailyRate(sku: string, period: BillingPeriod): number {
+  const enterprise = ENTERPRISE_PLAN_OFFERS.find((offer) => offer.sku === sku);
+  const key = sku as keyof typeof SERVICE_PLAN_CATALOG;
+  const monthly =
+    enterprise?.monthlyPriceUsdcAtomic ?? SERVICE_PLAN_CATALOG[key]?.monthlyPriceUsdcAtomic ?? 0n;
+  const yearly =
+    enterprise?.yearlyPriceUsdcAtomic ?? SERVICE_PLAN_CATALOG[key]?.yearlyPriceUsdcAtomic ?? 0n;
+  return period === 'monthly' ? Number(monthly) / 30 : Number(yearly) / 365;
+}
+
+/** Whether a plan card is the account's current plan (any period). */
+export function useIsCurrentPlan(sku: CardSku | 'enterprise'): boolean {
+  const current = useContext(CurrentPlanContext);
+  if (!current) return false;
+  if (sku === 'enterprise') return current.plan === 'enterprise';
+  return currentSku(current) === sku;
+}
+
+/** A small pill in the corner of the current plan's card. */
+export function CurrentPlanBadge({ sku }: { sku: CardSku | 'enterprise' }) {
+  if (!useIsCurrentPlan(sku)) return null;
+  return (
+    <span className="absolute right-5 top-5 inline-flex h-6 items-center gap-1.5 rounded-full border border-[hsl(143_30%_70%)] bg-[hsl(143_35%_94%)] px-2.5 text-[12px] font-semibold text-[hsl(143_45%_24%)] shadow-[0_1px_2px_hsl(143_40%_20%/0.08)] sm:right-6 sm:top-6">
+      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[hsl(143_45%_34%)]" />
+      Current plan
+    </span>
   );
 }
 
@@ -92,18 +150,61 @@ export function PlanPrice({
  */
 export function PlanCta({ plan, label }: { plan: string | null; label: string }) {
   const { period } = useBillingPeriod();
-  const href = plan
+  const current = useContext(CurrentPlanContext);
+  const checkout = plan
     ? `/checkout?${new URLSearchParams({ plan, period }).toString()}`
     : '/dashboard';
+
+  // What this card means for the signed-in account; visitors see the plain offer.
+  let action: { href: string; label: string; primary: boolean } | 'current' = {
+    href: checkout,
+    label,
+    primary: plan !== null,
+  };
+  if (current) {
+    const mine = currentSku(current);
+    if (plan === null) {
+      action =
+        mine === null
+          ? 'current'
+          : { href: '/dashboard/billing', label: 'Manage your plan', primary: false };
+    } else if (mine === plan) {
+      action =
+        current.period === period
+          ? 'current'
+          : { href: checkout, label: `Switch to ${period}`, primary: false };
+    } else if (mine !== null) {
+      const higher =
+        dailyRate(plan, period) > dailyRate(mine, (current.period ?? 'monthly') as BillingPeriod);
+      action = higher
+        ? { href: checkout, label: 'Upgrade', primary: true }
+        : { href: checkout, label: 'Switch at renewal', primary: false };
+    }
+  }
+
+  if (action === 'current') {
+    return (
+      <div className="mt-auto pt-6">
+        <Button
+          variant="outline"
+          disabled
+          className="h-11 w-full text-[15px] disabled:opacity-100 disabled:text-muted-foreground"
+        >
+          <Check className="h-4 w-4" aria-hidden />
+          Your current plan
+        </Button>
+      </div>
+    );
+  }
   return (
     <div className="mt-auto pt-6">
       <Button
         asChild
-        variant={plan ? 'default' : 'outline'}
+        variant={action.primary ? 'default' : 'outline'}
         className="group/cta h-11 w-full text-[15px]"
       >
-        <Link href={href}>
-          {label}
+        <Link href={action.href}>
+          {action.label}
           <ArrowRight
             className="h-4 w-4 transition-transform group-hover/cta:translate-x-0.5 motion-reduce:transition-none"
             aria-hidden

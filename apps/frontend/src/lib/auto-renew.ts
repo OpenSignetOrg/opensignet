@@ -84,9 +84,13 @@ export class AutoRenewError extends Error {
 }
 
 async function call<T>(path: string, schema: z.ZodType<T>, body?: unknown): Promise<T> {
+  return request(`/api/v1/billing/plan/${path}`, schema, body);
+}
+
+async function request<T>(url: string, schema: z.ZodType<T>, body?: unknown): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`/api/v1/billing/plan/${path}`, {
+    response = await fetch(url, {
       method: body === undefined ? 'GET' : 'POST',
       credentials: 'include',
       cache: 'no-store',
@@ -115,5 +119,42 @@ export const turnAutoRenewOff = (cancellations: Cancellations | null): Promise<A
   call(
     'auto-renew/off',
     accountPlanSchema,
+    cancellations ?? { authorizer: null, cancellations: [] },
+  );
+
+/**
+ * Automatic renewal of one identity's domain, yearly, from the OpenSignet wallet:
+ *
+ *   GET  /api/v1/agents/:id/domain/auto-renew/terms -> MandateTerms
+ *   POST /api/v1/agents/:id/domain/auto-renew { renewals }            -> domain settings
+ *   GET  /api/v1/agents/:id/domain/auto-renew/off   -> { nonces }
+ *   POST /api/v1/agents/:id/domain/auto-renew/off { authorizer, cancellations } -> domain settings
+ *
+ * Each payment can only be charged from 30 days to 7 days before the domain expires.
+ */
+const domainPath = (id: string, path: string) =>
+  `/api/v1/agents/${encodeURIComponent(id)}/domain/${path}`;
+export const domainAutoRenewTerms = (id: string) =>
+  request(domainPath(id, 'auto-renew/terms'), mandateTermsSchema);
+export const turnDomainAutoRenewOn = <T>(
+  id: string,
+  renewals: SignedRenewals['renewals'],
+  schema: z.ZodType<T>,
+): Promise<T> => request(domainPath(id, 'auto-renew'), schema, { renewals });
+export const domainAutoRenewOffNonces = async (id: string) =>
+  (
+    await request(
+      domainPath(id, 'auto-renew/off'),
+      z.object({ nonces: z.array(z.string()).max(50) }).strict(),
+    )
+  ).nonces;
+export const turnDomainAutoRenewOff = <T>(
+  id: string,
+  cancellations: Cancellations | null,
+  schema: z.ZodType<T>,
+): Promise<T> =>
+  request(
+    domainPath(id, 'auto-renew/off'),
+    schema,
     cancellations ?? { authorizer: null, cancellations: [] },
   );

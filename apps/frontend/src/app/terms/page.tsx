@@ -125,6 +125,12 @@ const sections: readonly LegalSection[] = [
           Base. Prices exclude taxes unless stated otherwise.
         </p>
         <p>
+          An upgrade to a higher plan starts when you pay, and the unused part of your current
+          period is credited against its price. A change to a lower plan, or between monthly and
+          yearly billing at a lower rate, starts at your next renewal; the current plan stays in
+          place until then and is not refunded.
+        </p>
+        <p>
           Payments are final once provisioning or third-party work has begun, because registry fees
           and blockchain transfers cannot be reversed. A payment is refunded when OpenSignet marks
           it refund eligible, for example after a registration that could not be completed, or when
@@ -156,8 +162,14 @@ const sections: readonly LegalSection[] = [
               the few days around its renewal date. Turning it off cancels every unused payment.
             </>,
             <>
-              <strong>Reminders.</strong> We email you 14, 7 and 1 day before a USDC renewal, with
-              the amount and what to add if your wallet holds too little.
+              <strong>Domains</strong> renew yearly from your OpenSignet wallet if you turn
+              automatic renewal on for the domain, at the registrar’s renewal price. Each approved
+              payment can only be taken from 30 days to 7 days before the domain expires.
+            </>,
+            <>
+              <strong>Reminders.</strong> We email you 14, 7 and 1 day before a USDC plan renewal,
+              with the amount and what to add if your wallet holds too little. Domains without
+              automatic renewal get a reminder 30, 7 and 1 day before they expire.
             </>,
           ]}
         />

@@ -15,7 +15,21 @@ import {
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
+import { Dialog } from '@/components/ui/dialog';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Switch } from '@/components/ui/switch';
+import { ApprovalSummary } from '@/components/wallet/approval-summary';
+import { VaultApprovalDialog } from '@/components/wallet/vault-approval-dialog';
+import { AccountError, createAccountClient } from '@/lib/account-client';
+import type { WalletApprover } from '@/lib/account-contract';
+import {
+  AutoRenewError,
+  domainAutoRenewOffNonces,
+  domainAutoRenewTerms,
+  turnDomainAutoRenewOff,
+  turnDomainAutoRenewOn,
+  type MandateTerms,
+} from '@/lib/auto-renew';
 import { API_TIMEOUT_MS } from '@/lib/transport-policy';
 import { formatDate, timeAgo } from '@/lib/utils';
 import { StatusPill } from './identity-bits';
@@ -38,6 +52,9 @@ const domainSettingsSchema = z
     nameserversManaged: z.boolean(),
     transferLock: z.boolean(),
     whoisPrivacy: z.boolean(),
+    /** One year's renewal in USDC atomic units (registrar cost), when it can be quoted. */
+    renewalPrice: z.string().nullable(),
+    autoRenewAvailable: z.boolean(),
   })
   .strict();
 type DomainSettings = z.infer<typeof domainSettingsSchema>;
@@ -211,19 +228,7 @@ export function IdentityDomainTab() {
             The renewal date appears once registration is complete.
           </p>
         )}
-        <div className="mt-4 flex items-start justify-between gap-4 border-t border-border/60 pt-4">
-          <div className="min-w-0">
-            <div className="text-[13.5px] font-medium">Automatic renewal</div>
-            <p className="mt-0.5 text-[12.5px] leading-5 text-muted-foreground">
-              {settings.autoRenew
-                ? 'This domain renews on its own each year.'
-                : 'Off. Domain renewals open in an upcoming update; until then, the renewal date above is when it needs renewing.'}
-            </p>
-          </div>
-          <span className="inline-flex h-6 shrink-0 items-center rounded-full border border-border/80 bg-card/80 px-2.5 text-[12px] font-medium text-foreground/85">
-            {settings.autoRenew ? 'On' : 'Off'}
-          </span>
-        </div>
+        <DomainAutoRenew identityId={id} settings={settings} onChange={setSettings} />
       </Panel>
 
       <Panel icon={Server} title="Nameservers">
@@ -340,5 +345,166 @@ function CopyButton({ value }: { value: string }) {
         <Copy className="h-3.5 w-3.5" aria-hidden />
       )}
     </button>
+  );
+}
+
+function dollars(atomic: string): string {
+  return `$${(Number(atomic) / 1_000_000).toFixed(2)}`;
+}
+
+/**
+ * Automatic renewal of the domain from the OpenSignet wallet: on approves two yearly payments
+ * with the wallet vault; off cancels every unused one.
+ */
+function DomainAutoRenew({
+  identityId,
+  settings,
+  onChange,
+}: {
+  identityId: string;
+  settings: DomainSettings;
+  onChange: (settings: DomainSettings) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [terms, setTerms] = useState<MandateTerms | null>(null);
+  const [approvers, setApprovers] = useState<WalletApprover[] | null>(null);
+  const [confirmOff, setConfirmOff] = useState(false);
+  const on = settings.autoRenew;
+  const price = settings.renewalPrice ? dollars(settings.renewalPrice) : null;
+
+  const failure = (thrown: unknown) =>
+    thrown instanceof AutoRenewError || thrown instanceof AccountError
+      ? thrown.message
+      : new AutoRenewError('unavailable').message;
+
+  async function start() {
+    setBusy(true);
+    setError(null);
+    try {
+      const [nextTerms, wallet] = await Promise.all([
+        domainAutoRenewTerms(identityId),
+        createAccountClient().wallet(),
+      ]);
+      if (!wallet?.approvers?.length) throw new AutoRenewError('unavailable');
+      setApprovers(wallet.approvers);
+      setTerms(nextTerms);
+    } catch (thrown) {
+      setError(failure(thrown));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function stop() {
+    setBusy(true);
+    setError(null);
+    try {
+      const nonces = await domainAutoRenewOffNonces(identityId);
+      const cancellations = nonces.length
+        ? await createAccountClient().cancelAuthorizations(nonces)
+        : null;
+      onChange(await turnDomainAutoRenewOff(identityId, cancellations, domainSettingsSchema));
+      setConfirmOff(false);
+      toast.success('Automatic renewal is off', {
+        description: `Renew ${settings.domain} before its renewal date to keep it.`,
+      });
+    } catch (thrown) {
+      setError(failure(thrown));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-border/60 pt-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <label htmlFor="domain-auto-renew" className="text-[13.5px] font-medium">
+            Automatic renewal
+          </label>
+          <p
+            id="domain-auto-renew-help"
+            className="mt-0.5 text-[12.5px] leading-5 text-muted-foreground"
+          >
+            {!settings.autoRenewAvailable
+              ? 'Available once the domain is registered and active.'
+              : on
+                ? `Renews from your OpenSignet wallet each year${price ? ` for ${price}` : ''}. Keep enough USDC on Base in it from 30 days before the renewal date.`
+                : `Turn it on to renew from your OpenSignet wallet each year${price ? ` for ${price}` : ''}, with nothing to do each time.`}
+          </p>
+        </div>
+        <Switch
+          id="domain-auto-renew"
+          aria-describedby="domain-auto-renew-help"
+          checked={on}
+          disabled={busy || (!on && !settings.autoRenewAvailable)}
+          onCheckedChange={(checked) => (checked ? void start() : setConfirmOff(true))}
+        />
+      </div>
+      {error ? <InlineNotice className="mt-3">{error}</InlineNotice> : null}
+
+      {terms && approvers ? (
+        <VaultApprovalDialog
+          title="Turn on automatic renewal"
+          emailDescription="Approve the renewals with a code sent to your email."
+          walletDescription="Approve the renewals by signing with your linked wallet."
+          approvers={approvers}
+          start={(factor) => createAccountClient().startMandate(factor, terms)}
+          onApproved={async (challenge) => {
+            const signed = await createAccountClient().signMandate(challenge.challengeId);
+            onChange(
+              await turnDomainAutoRenewOn(identityId, signed.renewals, domainSettingsSchema),
+            );
+            setTerms(null);
+            toast.success('Automatic renewal is on', {
+              description: `${settings.domain} renews from your OpenSignet wallet each year.`,
+            });
+          }}
+          onClose={() => setTerms(null)}
+        >
+          <ApprovalSummary
+            icon={RefreshCw}
+            title={`${settings.domain} renewal`}
+            subtitle={`Up to ${terms.count} yearly renewals`}
+            amount={dollars(terms.value)}
+            amountNote="a year"
+            rows={[
+              { label: 'From', value: 'Your OpenSignet wallet' },
+              { label: 'To', value: 'OpenSignet' },
+              { label: 'Paid in', value: 'USDC on Base' },
+            ]}
+            note="Each renewal can only be charged from 30 days to 7 days before the domain expires. Turn it off at any time and every unused one is cancelled."
+          />
+        </VaultApprovalDialog>
+      ) : null}
+
+      {confirmOff ? (
+        <Dialog
+          title="Turn off automatic renewal?"
+          description={`${settings.domain} stays yours until ${settings.expiresAt ? formatDate(settings.expiresAt) : 'its renewal date'}. After that it can be lost unless you renew it.`}
+          onClose={() => setConfirmOff(false)}
+          busy={busy}
+        >
+          <p className="text-sm leading-6 text-muted-foreground">
+            Every future renewal payment you approved is cancelled on chain, so none can be used.
+          </p>
+          {error ? <InlineNotice className="mt-3">{error}</InlineNotice> : null}
+          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setConfirmOff(false)}
+              disabled={busy}
+            >
+              Keep it on
+            </Button>
+            <Button type="button" onClick={() => void stop()} disabled={busy}>
+              Turn off
+            </Button>
+          </div>
+        </Dialog>
+      ) : null}
+    </div>
   );
 }

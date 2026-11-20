@@ -4,7 +4,13 @@ import { Button } from '@/components/ui/button';
 import { ENTERPRISE_PLAN_OFFERS, SERVICE_PLAN_CATALOG } from '@opensignet/shared';
 import { monthlyPlanPrice, yearlyPlanCharge } from '@/lib/plan-pricing';
 import { EnterprisePlanSelector } from './enterprise-plan-selector';
-import { BillingPeriodProvider, BillingPeriodToggle, PlanCta, PlanPrice } from './billing-period';
+import {
+  BillingPeriodProvider,
+  BillingPeriodToggle,
+  CurrentPlanBadge,
+  PlanCta,
+  PlanPrice,
+} from './billing-period';
 import { PlanCarousel } from './plan-carousel';
 import Link from 'next/link';
 
@@ -106,8 +112,9 @@ export function Pricing() {
                 return (
                   <Card
                     key={plan.title}
-                    className="interactive-surface premium-surface h-full w-full border-border/60"
+                    className="interactive-surface premium-surface relative h-full w-full border-border/60"
                   >
+                    <CurrentPlanBadge sku={plan.plan} />
                     <CardContent className="flex h-full flex-col p-5 sm:p-6">
                       <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-lg border border-border/70 bg-background/60 text-primary shadow-sm">
                         <Icon className="h-5 w-5" />
@@ -134,7 +141,8 @@ export function Pricing() {
                   </Card>
                 );
               })}
-              <Card className="interactive-surface premium-surface h-full w-full border-border/60">
+              <Card className="interactive-surface premium-surface relative h-full w-full border-border/60">
+                <CurrentPlanBadge sku="enterprise" />
                 <CardContent className="flex h-full flex-col p-5 sm:p-6">
                   <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-lg border border-border/70 bg-background/60 text-primary shadow-sm">
                     <ShieldCheck className="h-5 w-5" />

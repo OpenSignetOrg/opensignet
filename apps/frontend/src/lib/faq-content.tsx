@@ -88,12 +88,12 @@ export const PRICING_FAQS: readonly FaqItem[] = [
   {
     question: 'Can I change my plan later?',
     answer:
-      'Yes. Your plan covers your whole account and every domain in it. Upgrade or change it at any time from this page or from your dashboard; plans are never bought during domain registration.',
+      'Yes. Your plan covers your whole account and every domain in it. An upgrade starts right away, and the unused part of your current plan is credited against it. A move to a lower plan starts at your next renewal, so you keep what you paid for until then and nothing is refunded. You can cancel a scheduled change from your dashboard before it starts. Plans are never bought during domain registration.',
   },
   {
     question: 'How do renewals work?',
     answer:
-      'Plans paid by card renew on the card. Plans paid in USDC renew from your OpenSignet wallet when you turn on automatic renewal in your dashboard: you approve the exact payments once, and we remind you 14, 7 and 1 day before each one. Domains renew before they expire when auto-renew is on. If a renewal cannot be paid, the service can expire, so keep enough in your wallet.',
+      'Plans paid by card renew on the card. Plans paid in USDC renew from your OpenSignet wallet when you turn on automatic renewal in your dashboard: you approve the exact payments once, and we remind you 14, 7 and 1 day before each one. Domains renew yearly from your OpenSignet wallet when you turn on automatic renewal on the domain’s page: each payment can only be taken from 30 to 7 days before the domain expires. If a renewal cannot be paid, the service can expire, so keep enough in your wallet.',
   },
   {
     question: 'Are payments refundable?',

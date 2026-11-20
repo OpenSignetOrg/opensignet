@@ -188,6 +188,8 @@
   }
   /* Signed-in console: the raised content panel, its cards and the current sidebar item. */
   .console-panel {
+    /* The colour edge shadows fade into inside the panel. */
+    --edge-bg: 45 30% 97.4%;
     border: 1px solid hsl(var(--border) / 0.7);
     background: hsl(45 30% 97.4%);
     box-shadow:

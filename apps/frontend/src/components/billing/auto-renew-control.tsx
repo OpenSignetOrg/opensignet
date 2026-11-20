@@ -90,7 +90,7 @@ export function AutoRenewControl({
   }
 
   return (
-    <div className="mt-3 flex flex-col gap-2 border-t border-border/70 pt-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 border-t border-border/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
       <div className="min-w-0 text-sm">
         <div className="flex items-center gap-2 font-medium">
           <RefreshCcw
@@ -101,23 +101,41 @@ export function AutoRenewControl({
           Automatic renewal {on ? 'is on' : 'is off'}
         </div>
         <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-          {on
-            ? 'Renews from your OpenSignet wallet. Keep enough USDC on Base in it before each renewal.'
-            : 'Turn it on to renew from your OpenSignet wallet without doing anything each time.'}
+          {on && !plan.autoRenewApproved
+            ? 'Your next renewal is for a different plan. Approve its amount so it renews automatically.'
+            : on
+              ? 'Renews from your OpenSignet wallet. Keep enough USDC on Base in it before each renewal.'
+              : 'Turn it on to renew from your OpenSignet wallet without doing anything each time.'}
         </p>
         {error ? <InlineNotice className="mt-2">{error}</InlineNotice> : null}
       </div>
-      <Button
-        type="button"
-        variant={on ? 'ghost' : 'outline'}
-        size="sm"
-        className="h-9 w-full shrink-0 sm:w-auto"
-        disabled={busy}
-        onClick={() => (on ? setConfirmOff(true) : void start())}
-      >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-        {on ? 'Turn off' : 'Turn on'}
-      </Button>
+      <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+        {on && !plan.autoRenewApproved ? (
+          <Button
+            type="button"
+            size="sm"
+            className="h-9 w-full rounded-lg sm:w-auto"
+            disabled={busy}
+            onClick={() => void start()}
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            Approve new amount
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant={on ? 'ghost' : 'outline'}
+          size="sm"
+          className="h-9 w-full rounded-lg sm:w-auto"
+          disabled={busy}
+          onClick={() => (on ? setConfirmOff(true) : void start())}
+        >
+          {busy && !(on && !plan.autoRenewApproved) ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          ) : null}
+          {on ? 'Turn off' : 'Turn on'}
+        </Button>
+      </div>
 
       {terms && approvers ? (
         <VaultApprovalDialog

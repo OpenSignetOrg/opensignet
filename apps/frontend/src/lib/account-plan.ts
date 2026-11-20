@@ -41,6 +41,8 @@ export const accountPlanSchema = z
       })
       .strict()
       .nullable(),
+    /** False when automatic renewal is on but the next renewal (after a scheduled change) needs a new approval. */
+    autoRenewApproved: z.boolean(),
   })
   .strict();
 export type AccountPlan = z.infer<typeof accountPlanSchema>;
@@ -90,6 +92,26 @@ export async function fetchAccountPlan(signal?: AbortSignal): Promise<AccountPla
     });
   } catch (error) {
     if (signal?.aborted) throw error;
+    throw new AccountPlanError('unavailable');
+  }
+  if (response.status === 401) throw new AccountPlanError('signed-out');
+  if (!response.ok) throw new AccountPlanError('unavailable');
+  const parsed = accountPlanSchema.safeParse(await response.json().catch(() => null));
+  if (!parsed.success) throw new AccountPlanError('unavailable');
+  return parsed.data;
+}
+
+/** Cancels a plan change scheduled for the next renewal; the current plan simply continues. */
+export async function cancelScheduledChange(): Promise<AccountPlan> {
+  let response: Response;
+  try {
+    response = await fetch('/api/v1/billing/plan/schedule', {
+      method: 'DELETE',
+      credentials: 'include',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+  } catch {
     throw new AccountPlanError('unavailable');
   }
   if (response.status === 401) throw new AccountPlanError('signed-out');

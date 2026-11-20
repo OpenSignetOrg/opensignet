@@ -487,7 +487,8 @@ export function DnsManagement({
             options={typeOptions}
             onChange={setTypeFilter}
             ariaLabel="Filter by record type"
-            className="sm:w-44"
+            className="shrink-0 sm:w-44"
+            triggerClassName="h-9 rounded-lg sm:w-full"
           />
         </div>
 
