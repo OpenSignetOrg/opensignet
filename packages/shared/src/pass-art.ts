@@ -133,6 +133,18 @@ export function renderPassSvg(input: PassArtInput): string {
     '<radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">',
     '<stop offset="0" stop-color="#F7701D" stop-opacity="0.16"/><stop offset="1" stop-color="#F7701D" stop-opacity="0"/>',
     '</radialGradient>',
+    // The name: ivory with a soft warm sheen, like pressed paper under light.
+    '<linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">',
+    '<stop offset="0" stop-color="#FFFDF8"/><stop offset="0.55" stop-color="#F3F1EC"/><stop offset="1" stop-color="#D9CDB6"/>',
+    '</linearGradient>',
+    '<radialGradient id="vignette" cx="0.5" cy="0.48" r="0.75">',
+    '<stop offset="0.6" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.38"/>',
+    '</radialGradient>',
+    // Fine film grain: gives the dark ground a printed, tactile finish.
+    '<filter id="grain" x="0" y="0" width="100%" height="100%">',
+    '<feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7" stitchTiles="stitch"/>',
+    '<feColorMatrix values="0 0 0 0 0.95  0 0 0 0 0.92  0 0 0 0 0.86  0 0 0 0.07 0"/>',
+    '</filter>',
     `<path id="frame" d="${frame}"/>`,
     '<clipPath id="card"><rect x="48" y="48" width="1104" height="1104" rx="56"/></clipPath>',
     '</defs>',
@@ -143,16 +155,22 @@ export function renderPassSvg(input: PassArtInput): string {
     '<circle cx="905" cy="300" r="420" fill="url(#glow)"/>',
     `<path d="${rosette(905, 300, 360, 128, 72)}" fill="none" stroke="url(#foil)" stroke-width="0.7" opacity="0.13"/>`,
     `<path d="${rosette(905, 300, 230, 84, 48)}" fill="none" stroke="url(#foil)" stroke-width="0.7" opacity="0.1"/>`,
+    `<path d="${rosette(905, 300, 150, 150 * 0.62, 36)}" fill="none" stroke="url(#foil)" stroke-width="0.5" opacity="0.08"/>`,
+    '<circle cx="905" cy="300" r="372" fill="none" stroke="url(#foil)" stroke-width="0.8" opacity="0.18"/>',
+    '<circle cx="905" cy="300" r="380" fill="none" stroke="url(#foil)" stroke-width="0.5" opacity="0.1" stroke-dasharray="1 5"/>',
     mark(830, 196, 210, 'url(#foil)').replace('<g ', '<g opacity="0.2" '),
     Array.from(
       { length: 9 },
       (_, index) =>
         `<path d="M48 ${1000 + index * 16} C 360 ${972 + index * 16}, 840 ${1028 + index * 16}, 1152 ${996 + index * 16}" fill="none" stroke="${IVORY}" stroke-width="0.6" opacity="${(0.05 - index * 0.004).toFixed(3)}"/>`,
     ).join(''),
+    '<rect x="48" y="48" width="1104" height="1104" fill="url(#vignette)"/>',
+    '<rect x="48" y="48" width="1104" height="1104" filter="url(#grain)"/>',
     '</g>',
-    // Foil frame with a microprinted edge.
-    '<rect x="48" y="48" width="1104" height="1104" rx="56" fill="none" stroke="url(#foil)" stroke-width="2.5"/>',
-    `<use href="#frame" fill="none" stroke="${IVORY}" stroke-opacity="0.08" stroke-width="1"/>`,
+    // Double foil frame with a microprinted edge.
+    '<rect x="48" y="48" width="1104" height="1104" rx="56" fill="none" stroke="url(#foil)" stroke-width="2.25"/>',
+    // The microprint runs in a band between the outer foil and a fine inner foil line.
+    '<rect x="84" y="84" width="1032" height="1032" rx="22" fill="none" stroke="url(#foil)" stroke-width="0.75" opacity="0.6"/>',
     // Exactly nine runs spread over the whole edge (length 4162), so the seam never overlaps.
     `<text font-family="${MONO}" font-size="10.5" fill="${IVORY}" opacity="0.32"><textPath href="#frame" startOffset="6" textLength="4150" lengthAdjust="spacing">${micro.repeat(9).trimEnd()}</textPath></text>`,
     // Header: mark and name, pass number.
@@ -162,10 +180,13 @@ export function renderPassSvg(input: PassArtInput): string {
     `<text x="1080" y="164" text-anchor="end" font-family="${MONO}" font-size="24" font-weight="500" letter-spacing="1.5" fill="url(#foil)">${escapeXml(number)}</text>`,
     `<text x="1080" y="194" text-anchor="end" font-family="${SANS}" font-size="14" font-weight="500" letter-spacing="4" fill="${MUTED}">IDENTITY</text>`,
     // The name, large.
-    `<text x="120" y="680" font-family="${SANS}" font-size="${size}" font-weight="600" letter-spacing="${(-size * 0.035).toFixed(2)}" fill="${IVORY}">${escapeXml(hero)}</text>`,
+    `<text x="120" y="680" font-family="${SANS}" font-size="${size}" font-weight="600" letter-spacing="${(-size * 0.035).toFixed(2)}" fill="url(#sheen)">${escapeXml(hero)}</text>`,
     `<rect x="120" y="716" width="360" height="2" fill="url(#ember)"/>`,
     // What the pass links.
     `<rect x="120" y="808" width="960" height="1" fill="${IVORY}" opacity="0.1"/>`,
+    // Hairlines between the three linked forms.
+    `<rect x="430" y="846" width="1" height="84" fill="${IVORY}" opacity="0.08"/>`,
+    `<rect x="760" y="846" width="1" height="84" fill="${IVORY}" opacity="0.08"/>`,
     column(120, forms[0]!),
     column(450, forms[1]!),
     column(780, forms[2]!),
