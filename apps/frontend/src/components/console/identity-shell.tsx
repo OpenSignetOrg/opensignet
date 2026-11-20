@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, ChevronRight, FileText, Globe, KeyRound, Mail } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, FileText, Globe, KeyRound, Mail, Network } from 'lucide-react';
 import {
   OwnerManagementGate,
   type ManagementAccess,
@@ -108,8 +108,9 @@ export function IdentityShell({
   const { agent, inbox } = view;
   const tabs = [
     { href: base, label: 'Email', icon: Mail },
-    { href: `${base}/dns`, label: 'DNS', icon: Globe },
+    { href: `${base}/dns`, label: 'DNS', icon: Network },
     { href: `${base}/keys`, label: 'API keys', icon: KeyRound },
+    { href: `${base}/domain`, label: 'Domain', icon: Globe },
     { href: `${base}/details`, label: 'Details', icon: FileText },
   ] as const;
 
