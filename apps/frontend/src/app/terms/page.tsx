@@ -249,8 +249,15 @@ const sections: readonly LegalSection[] = [
       <>
         <p>
           You can delete your account at any time in Settings. Before you do, move your wallet funds
-          and transfer anything you want to keep, such as domains or mail. Deletion cannot be
-          undone.
+          and transfer anything you want to keep, such as domains or mail.
+        </p>
+        <p>
+          When you delete it, every automatic renewal turns off at once and you are signed out
+          everywhere. Signing in within 30 days restores the account; otherwise it is deleted for
+          good after 30 days. Deleting it again within 30 days of the first time deletes it for good
+          at once. Deleting for good cancels your plan without a refund, stops our services for your
+          domains and deletes your account data. The domains stay registered to the owner details on
+          record until they expire and are not renewed. This cannot be undone.
         </p>
         <p>
           We may suspend or close an account that breaches these terms, puts other users or the

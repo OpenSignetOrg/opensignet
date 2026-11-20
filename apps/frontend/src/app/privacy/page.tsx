@@ -174,7 +174,7 @@ const sections: readonly LegalSection[] = [
     body: (
       <LegalList
         items={[
-          'Account details: until you delete your account. A replaced profile photo is deleted right away.',
+          'Account details: until your account is deleted for good, 30 days after you delete it (or at once if you delete it again within those 30 days). A replaced profile photo is deleted right away.',
           'One-time codes and wallet approvals: deleted within one day after they expire.',
           'Signed-in device records: deleted 30 days after the session ends.',
           'Security log: 13 months.',

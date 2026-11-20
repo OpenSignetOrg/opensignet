@@ -77,6 +77,8 @@ export function accountErrorMessage(
       return 'Use a PNG, JPG or WebP image up to 2 MB.';
     case 'wallet_not_empty':
       return 'Move the funds out of your OpenSignet wallet before deleting your account.';
+    case 'permanent_deletion_unconfirmed':
+      return 'This delete would be permanent. Refresh the page and confirm it again.';
     case 'wrong_signature':
       return 'That signature isn’t from the wallet linked to your account. Sign with that wallet.';
     case 'approval_required':
@@ -135,7 +137,11 @@ export interface AccountClient {
     summary: string;
     renews?: RenewalItem | null;
   }): Promise<string>;
-  deleteAccount(): Promise<void>;
+  /**
+   * Deletes the account: the first time it's scheduled (30 days to restore by signing in); a
+   * second time within 30 days deletes it for good, so `permanent` must say so.
+   */
+  deleteAccount(permanent?: boolean): Promise<void>;
   signOut(): Promise<void>;
 }
 
@@ -241,7 +247,8 @@ export function createAccountClient(fetcher: typeof fetch = fetch): AccountClien
       (await call('wallet/export/start', 'POST', walletTokenSchema, {})).token,
     payFromWallet: async (payment) =>
       (await call('wallet/payments', 'POST', paymentSignatureSchema, { payment })).signature,
-    deleteAccount: () => call('account', 'DELETE', empty).then(() => undefined),
+    deleteAccount: (permanent = false) =>
+      call('account', 'DELETE', empty, { permanent }).then(() => undefined),
     signOut: () => call('auth/session', 'DELETE', empty).then(() => undefined),
   };
 }

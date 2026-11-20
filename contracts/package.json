@@ -9,7 +9,7 @@
   "type": "module",
   "scripts": {
     "build": "forge build",
-    "test": "node --test \"test/*.test.ts\"",
+    "test": "forge test && node --test \"test/*.test.ts\"",
     "security:slither": "slither . --fail-high",
     "security:mythril": "myth analyze src/AgentIdentityRegistry.sol --solv 0.8.34 --execution-timeout 120 && myth analyze src/PaymentRouter.sol --solv 0.8.34 --execution-timeout 120 && myth analyze src/RenewalVault.sol --solv 0.8.34 --execution-timeout 120",
     "fmt": "forge fmt",

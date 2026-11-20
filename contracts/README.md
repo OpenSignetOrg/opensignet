@@ -5,11 +5,12 @@ checked-in Foundry profile pins the compiler settings recorded for the published
 
 ## Contracts
 
-| Contract                | Public behavior                                         |
-| ----------------------- | ------------------------------------------------------- |
-| `AgentIdentityRegistry` | ERC-721 representation of an agent identity bundle      |
-| `PaymentRouter`         | Idempotent USDC payment and identity-mint coordination  |
-| `RenewalVault`          | USDC deposits and controlled identity-renewal execution |
+| Contract                | Public behavior                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `OpenSignetPass`        | The OpenSignet Pass: one non-transferable token per identity, held in the account's OpenSignet wallet, linking its domain, Basename and ENS name |
+| `AgentIdentityRegistry` | ERC-721 representation of an agent identity bundle                                                                                               |
+| `PaymentRouter`         | Idempotent USDC payment and identity-mint coordination                                                                                           |
+| `RenewalVault`          | USDC deposits and controlled identity-renewal execution                                                                                          |
 
 The contracts expose the onchain portion of registration and renewal. Review their source, NatSpec,
 and published deployment record before integrating; offchain API responses remain authoritative for
@@ -23,6 +24,7 @@ run from this directory:
 ```bash
 forge build
 forge fmt --check
+forge test
 node --test "test/*.test.ts"
 ```
 

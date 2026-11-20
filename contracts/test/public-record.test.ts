@@ -37,9 +37,14 @@ test('published contract metadata is reproducible and contains no backend config
   assert.match(foundry, /^optimizer = false$/m);
   assert.match(foundry, /^via_ir = false$/m);
   assert.match(foundry, /^evm_version = "cancun"$/m);
-  assert.doesNotMatch(readme, /published ABI|forge test/i);
+  assert.doesNotMatch(readme, /published ABI/i);
 
-  const sources = ['AgentIdentityRegistry.sol', 'PaymentRouter.sol', 'RenewalVault.sol'];
+  const sources = [
+    'AgentIdentityRegistry.sol',
+    'OpenSignetPass.sol',
+    'PaymentRouter.sol',
+    'RenewalVault.sol',
+  ];
   assert.deepEqual((await readdir(join(root, 'src'))).sort(), sources);
   for (const source of sources) {
     await access(join(root, 'src', source));

@@ -66,6 +66,11 @@ export const accountSettingsSchema = z
     externalWallet: z.object({ address, linkedAt: isoDate }).strict().nullable(),
     /** Null only in the moments after sign-up, while the wallet is being created. */
     embeddedWallet: z.lazy(() => embeddedWalletSchema).nullable(),
+    /**
+     * Set when the account was deleted within the last 30 days and restored by signing in: a
+     * delete before `permanentUntil` deletes it for good at once.
+     */
+    deletion: z.object({ permanentUntil: isoDate }).strict().nullable(),
     createdAt: isoDate,
   })
   .strict();
@@ -144,6 +149,7 @@ export const accountErrorCodes = [
   'avatar_limit',
   'invalid_image',
   'wallet_not_empty',
+  'permanent_deletion_unconfirmed',
   'wrong_signature',
   'approval_required',
   'no_approver',
