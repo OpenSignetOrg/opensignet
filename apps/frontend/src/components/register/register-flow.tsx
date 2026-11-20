@@ -891,12 +891,12 @@ export function RegisterFlow() {
         </Card>
       )}
 
-      {/* Step 4: The domain owner, once per account */}
-      {signedIn ? (
+      {/* Step 4: The domain owner, once per account, once a name is chosen and priced */}
+      {signedIn && showQuoteCard ? (
         <Card className="premium-surface">
           <CardContent className="p-4 sm:p-6">
             <RegistrantStep
-              step={showQuoteCard ? 4 : 3}
+              step={4}
               accountEmail={
                 accountSession.status === 'signed-in' ? accountSession.account.email : null
               }
@@ -911,7 +911,7 @@ export function RegisterFlow() {
       <Card className="premium-surface">
         <CardContent className="p-4 sm:p-6">
           <h2 className="text-sm font-semibold">
-            {(showQuoteCard ? 4 : 3) + (signedIn ? 1 : 0)}. Payment
+            {showQuoteCard ? (signedIn ? 5 : 4) : 3}. Payment
           </h2>
           {accountSession.status === 'loading' ? (
             <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground" role="status">
@@ -990,7 +990,7 @@ export function RegisterFlow() {
                     <ConnectWalletButton variant="outline" size="sm" label="Connect wallet" />
                   ) : !connectedLinked ? (
                     <Button asChild variant="outline" size="sm" className="self-start sm:self-auto">
-                      <Link href="/settings/security">Open Settings</Link>
+                      <Link href="/settings#sign-in-methods">Open Settings</Link>
                     </Button>
                   ) : null}
                 </div>

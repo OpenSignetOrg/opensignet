@@ -1,19 +1,14 @@
-import { Suspense } from 'react';
 import type { Metadata } from 'next';
-import { SecurityTabPage } from '@/components/settings/security-tab-page';
+import { SecurityTab } from '@/components/settings/security-tab';
 import { createPageMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = createPageMetadata({
   title: 'Security Settings',
-  description: 'Manage your email, sign-in methods and signed-in devices.',
+  description: 'See your signed-in devices and delete your account.',
   path: '/settings/security',
   index: false,
 });
 
 export default function SettingsSecurityPage() {
-  return (
-    <Suspense fallback={null}>
-      <SecurityTabPage />
-    </Suspense>
-  );
+  return <SecurityTab />;
 }

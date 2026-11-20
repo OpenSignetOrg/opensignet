@@ -99,6 +99,7 @@ export function SelectMenu<T extends string | number>({
   optionClassName,
   searchable = false,
   searchLabel = 'Search',
+  valueLabel,
 }: {
   value: T;
   options: readonly SelectMenuOption<T>[];
@@ -126,6 +127,8 @@ export function SelectMenu<T extends string | number>({
   searchable?: boolean;
   /** The search field's accessible name and placeholder, for example "Search countries". */
   searchLabel?: string;
+  /** Shorter text for the button than the option's label, for example "+880". */
+  valueLabel?: string;
 }) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -263,7 +266,7 @@ export function SelectMenu<T extends string | number>({
           triggerClassName,
         )}
       >
-        {selected?.label}
+        <span className="min-w-0 truncate">{valueLabel ?? selected?.label}</span>
         <ChevronDown
           className={cn(
             'h-4 w-4 shrink-0 text-muted-foreground transition-transform',

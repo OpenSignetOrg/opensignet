@@ -146,66 +146,67 @@ function WalletCard({
       title="OpenSignet wallet"
       description="Your account’s own wallet on Base. It pays OpenSignet while you’re signed in; sending funds anywhere else needs your approval."
     >
-      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+      {/* Balance first, with the one action that moves it. */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Address
+            Balance
           </div>
-          <div className="mt-1.5 flex items-center gap-2">
-            <code className="min-w-0 truncate rounded-md bg-secondary/70 px-2.5 py-1.5 font-mono text-[13px]">
-              {address}
-            </code>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 shrink-0"
-              onClick={() => void copy()}
-              aria-label={copied ? 'Address copied' : 'Copy address'}
-            >
-              {copied ? (
-                <Check className="h-4 w-4" aria-hidden />
-              ) : (
-                <Copy className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-              )}
-            </Button>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            {isLoading ? (
+              <span className="inline-block h-8 w-28 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+            ) : (
+              <>
+                <span className="text-[28px] font-semibold leading-none tracking-tight tabular-nums">
+                  {formatUsd(balanceNumber).slice(1)}
+                </span>
+                <span className="text-sm font-medium text-muted-foreground">USDC on Base</span>
+              </>
+            )}
           </div>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground">
-            Send USDC on Base to this address to pay with crypto and keep automatic renewals funded.
-            Withdraw sends it to any wallet on Base.
-          </p>
         </div>
-        <div className="flex items-center justify-between gap-4 rounded-xl border border-border/80 bg-background/50 px-4 py-3 sm:min-w-[220px] sm:flex-col sm:items-end sm:justify-start sm:gap-2">
-          <div className="sm:text-right">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Balance
-            </div>
-            <div className="mt-1 text-xl font-semibold tabular-nums">
-              {isLoading ? (
-                <span className="inline-block h-6 w-20 animate-pulse rounded bg-muted motion-reduce:animate-none" />
-              ) : (
-                <>
-                  {formatUsd(balanceNumber).slice(1)}{' '}
-                  <span className="text-sm font-medium text-muted-foreground">USDC</span>
-                </>
-              )}
-            </div>
-          </div>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-10 w-full shrink-0 sm:w-auto sm:min-w-[9.5rem]"
+          disabled={!approvers?.length}
+          title={
+            approvers?.length ? undefined : 'Add an email or link a wallet to approve withdrawals'
+          }
+          onClick={() => setWithdrawing(true)}
+        >
+          <ArrowUpRight className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+          Withdraw
+        </Button>
+      </div>
+
+      {/* Where to send USDC to add funds. */}
+      <div className="mt-5 border-t border-border/70 pt-5">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Deposit address
+        </div>
+        <div className="mt-1.5 flex items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded-lg bg-secondary/70 px-3 py-2 font-mono text-[13px]">
+            {address}
+          </code>
           <Button
             type="button"
             variant="outline"
-            size="sm"
-            className="h-9 shrink-0"
-            disabled={!approvers?.length}
-            title={
-              approvers?.length ? undefined : 'Add an email or link a wallet to approve withdrawals'
-            }
-            onClick={() => setWithdrawing(true)}
+            size="icon"
+            className="h-9 w-9 shrink-0"
+            onClick={() => void copy()}
+            aria-label={copied ? 'Address copied' : 'Copy address'}
           >
-            <ArrowUpRight className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-            Withdraw
+            {copied ? (
+              <Check className="h-4 w-4" aria-hidden />
+            ) : (
+              <Copy className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+            )}
           </Button>
         </div>
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+          Send USDC on Base to this address to pay with crypto and keep automatic renewals funded.
+        </p>
       </div>
       {withdrawing && approvers?.length ? (
         <WithdrawDialog

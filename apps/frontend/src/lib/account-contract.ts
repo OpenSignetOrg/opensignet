@@ -14,7 +14,7 @@ import { DISPLAY_NAME_MAX_LENGTH, EMAIL_MAX_LENGTH } from './sign-in-contract';
  *   POST   /api/v1/account/email/start { email, turnstileToken } -> EmailChallenge   (step-up)
  *   POST   /api/v1/account/email/verify { code }   -> AccountSettings   add or change the one email
  *   DELETE /api/v1/account/email                   -> AccountSettings   wallet accounts only (step-up)
- *   GET    /api/v1/auth/google/start?intent=link&return_to=/settings/security
+ *   GET    /api/v1/auth/google/start?intent=link&return_to=/settings
  *   DELETE /api/v1/account/google                  -> AccountSettings   (step-up)
  *   GET    /api/v1/account/wallet/nonce            -> { nonce }
  *   PUT    /api/v1/account/wallet { message, signature } -> AccountSettings   the one outside wallet

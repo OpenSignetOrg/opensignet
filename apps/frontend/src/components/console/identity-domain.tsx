@@ -494,7 +494,7 @@ function DomainAutoRenew({
               <p className="mt-0.5 text-[12px] leading-5 text-muted-foreground">
                 To use a card,{' '}
                 <Link
-                  href="/settings/wallet#payment-methods"
+                  href="/wallet#payment-methods"
                   className="font-medium text-foreground underline-offset-2 hover:underline"
                 >
                   add one to your wallet

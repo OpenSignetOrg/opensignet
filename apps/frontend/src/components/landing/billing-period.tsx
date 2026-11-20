@@ -74,8 +74,13 @@ export function useIsCurrentPlan(sku: CardSku | 'enterprise'): boolean {
 export function CurrentPlanBadge({ sku }: { sku: CardSku | 'enterprise' }) {
   if (!useIsCurrentPlan(sku)) return null;
   return (
-    <span className="absolute right-5 top-5 inline-flex h-6 items-center gap-1.5 rounded-full border border-[hsl(143_30%_70%)] bg-[hsl(143_35%_94%)] px-2.5 text-[12px] font-semibold text-[hsl(143_45%_24%)] shadow-[0_1px_2px_hsl(143_40%_20%/0.08)] sm:right-6 sm:top-6">
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[hsl(143_45%_34%)]" />
+    <span className="absolute right-5 top-5 inline-flex h-7 items-center gap-1.5 rounded-full bg-[hsl(143_38%_94%)] py-1 pl-1 pr-3 text-[12px] font-semibold tracking-[0.01em] text-[hsl(143_45%_22%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_1px_2px_hsl(143_40%_20%/0.1)] ring-1 ring-inset ring-[hsl(143_30%_76%)] sm:right-6 sm:top-6">
+      <span
+        aria-hidden
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[hsl(143_45%_32%)] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]"
+      >
+        <Check className="h-3 w-3" strokeWidth={3} />
+      </span>
       Current plan
     </span>
   );

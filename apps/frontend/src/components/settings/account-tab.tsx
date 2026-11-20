@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { ImageUp, Loader2, Trash2 } from 'lucide-react';
+import { ImageUp, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -15,13 +15,14 @@ import { formatDate } from '@/lib/utils';
 import { AccountAvatar } from './account-avatar';
 import { useSettings } from './settings-context';
 import { SettingsCard } from './settings-ui';
-import { StepUpCancelled, useStepUp } from './step-up';
+import { EmailCard, SignInMethodsCard } from './sign-in-cards';
 
-export function AccountTab() {
+export function AccountTab({ google }: { google: string | null }) {
   return (
     <>
       <ProfileCard />
-      <DeleteAccountCard />
+      <EmailCard />
+      <SignInMethodsCard google={google} />
     </>
   );
 }
@@ -261,103 +262,6 @@ function ProfileCard() {
               Save photo
             </Button>
           </div>
-        </Dialog>
-      )}
-    </SettingsCard>
-  );
-}
-
-const CONFIRM_WORD = 'delete';
-
-function DeleteAccountCard() {
-  const { client } = useSettings();
-  const { run } = useStepUp();
-  const confirmId = useId();
-  const [open, setOpen] = useState(false);
-  const [typed, setTyped] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function remove() {
-    setBusy(true);
-    setError(null);
-    try {
-      await run(() => client.deleteAccount());
-      window.location.replace('/');
-    } catch (failure) {
-      if (!(failure instanceof StepUpCancelled)) setError(messageOf(failure));
-      setBusy(false);
-    }
-  }
-
-  return (
-    <SettingsCard
-      id="delete-account"
-      tone="danger"
-      title="Delete account"
-      description="Permanently delete your OpenSignet account, sign-in methods and settings. Your wallet must be empty or exported first. This can’t be undone."
-      footer={
-        <>
-          <span className="hidden sm:block" />
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            className="h-9 w-full sm:w-auto"
-            onClick={() => {
-              setTyped('');
-              setError(null);
-              setOpen(true);
-            }}
-          >
-            <Trash2 className="h-4 w-4" strokeWidth={1.75} aria-hidden />
-            Delete account
-          </Button>
-        </>
-      }
-    >
-      {open && (
-        <Dialog
-          title="Delete your account?"
-          description="Your account, linked sign-in methods and settings will be deleted. This can’t be undone."
-          onClose={() => setOpen(false)}
-          busy={busy}
-        >
-          <form
-            noValidate
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (typed.trim().toLowerCase() === CONFIRM_WORD) void remove();
-            }}
-          >
-            <label htmlFor={confirmId} className="mb-1.5 block text-sm">
-              Type <span className="font-semibold">{CONFIRM_WORD}</span> to confirm
-            </label>
-            <Input
-              id={confirmId}
-              value={typed}
-              onChange={(event) => setTyped(event.target.value)}
-              autoComplete="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              className="h-11"
-              disabled={busy}
-            />
-            {error && <InlineNotice className="mt-3">{error}</InlineNotice>}
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                variant="destructive"
-                disabled={busy || typed.trim().toLowerCase() !== CONFIRM_WORD}
-              >
-                {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-                Delete account
-              </Button>
-            </div>
-          </form>
         </Dialog>
       )}
     </SettingsCard>

@@ -14,7 +14,7 @@ GET    /api/v1/agents/:id/email
 DELETE /api/v1/agents/:id/email/:messageId
 ```
 
-Use `limit` and `unreadOnly` on list requests. Accepted message content is available for 30 days.
+Use `limit` and `unreadOnly` on list requests. Accepted message content is available for 15 days on the Free plan and 30 days on paid plans.
 Deleting a message makes it unavailable immediately.
 The response can also include `addressChange` and `mailStatus`. `sync=false` skips the current
 provider check and may return `mailStatus.state: "unchecked"`; this is not a readiness confirmation.

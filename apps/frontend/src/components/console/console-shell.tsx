@@ -52,10 +52,10 @@ const ACCOUNT_NAV: readonly NavItem[] = [
     match: (path) => path.startsWith('/dashboard/billing'),
   },
   {
-    href: '/settings/wallet',
+    href: '/wallet',
     label: 'Wallet',
     icon: Wallet,
-    match: (path) => path.startsWith('/settings/wallet'),
+    match: (path) => path.startsWith('/wallet'),
   },
   {
     href: '/settings',

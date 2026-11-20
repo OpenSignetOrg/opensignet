@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { isPossiblePhoneNumber, type CountryCode } from 'libphonenumber-js/min';
-import { Loader2, LockKeyhole, Pencil, UserRound } from 'lucide-react';
+import { Loader2, LockKeyhole, Pencil, ShieldCheck, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InlineNotice } from '@/components/ui/inline-notice';
@@ -74,12 +74,25 @@ export function RegistrantStep({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">{step}. Domain owner</h2>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
-          <LockKeyhole className="h-3 w-3" aria-hidden />
-          Kept private
+      <div className="flex items-start gap-3">
+        <span className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background/70 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] sm:inline-flex">
+          <ShieldCheck className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
         </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <h2 className="text-[15px] font-semibold leading-6">
+              <span className="text-muted-foreground">{step}.</span> Domain owner
+            </h2>
+            <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(143_35%_94%)] px-2 py-0.5 text-[11px] font-semibold text-[hsl(143_45%_24%)] ring-1 ring-inset ring-[hsl(143_30%_75%)]">
+              <LockKeyhole className="h-3 w-3" aria-hidden />
+              Private
+            </span>
+          </div>
+          <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">
+            Registries need the real owner of every domain. Add it once; it’s saved to your account
+            and kept out of public WHOIS wherever the registry allows it.
+          </p>
+        </div>
       </div>
       {status === 'loading' ? (
         <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground" role="status">
@@ -199,6 +212,7 @@ function RegistrantForm({
   const base = useId();
   const id = (field: string) => `${base}-${field}`;
   const countries = useMemo(() => countryOptions(), []);
+  const phoneField = useRef<HTMLDivElement>(null);
   const guess = useMemo(() => likelyCountry(), []);
   const [form, setForm] = useState<Registrant>(() => ({
     ...EMPTY_REGISTRANT,
@@ -240,9 +254,9 @@ function RegistrantForm({
       { value: '', label: 'Code' },
       ...countries.map((option) => ({
         value: option.code,
-        label: `${option.code} ${option.dial}`,
-        hint: option.name,
-        keywords: `${option.name} ${option.dial}`,
+        label: option.name,
+        hint: option.dial,
+        keywords: `${option.code} ${option.dial}`,
       })),
     ],
     [countries],
@@ -310,12 +324,7 @@ function RegistrantForm({
 
   return (
     <form onSubmit={submit} noValidate className="mt-3">
-      <p className="text-xs leading-5 text-muted-foreground">
-        Registries require the real owner of every domain. Add this once; it’s saved to your account
-        and used for each domain you register. Domain privacy keeps it out of public WHOIS wherever
-        the registry allows it.
-      </p>
-      <div className="mt-4 grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
+      <div className="mt-1 grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
         <Field label="First name" id={id('firstName')} error={errors.firstName}>
           <Input {...input('firstName', { autoComplete: 'given-name' })} />
         </Field>
@@ -349,11 +358,19 @@ function RegistrantForm({
           />
         </Field>
         <Field label="Phone" id={id('phoneNumber')} error={errors.phoneNumber}>
-          <div className="flex gap-2">
+          {/* One field: the country code sits inside it, like the number's own prefix. */}
+          <div
+            ref={phoneField}
+            className={cn(
+              'flex h-10 min-w-0 items-stretch overflow-hidden rounded-md border border-input bg-background/70 shadow-[inset_0_1px_3px_rgba(20,21,18,0.08),inset_0_1px_0_rgba(255,255,255,0.72)] focus-within:border-primary/45 focus-within:ring-2 focus-within:ring-ring/40',
+              errors.phoneNumber && 'border-destructive/70',
+            )}
+          >
             <SelectMenu
               ariaLabel="Phone country code"
               value={phoneCountry}
               options={dialChoices}
+              valueLabel={countries.find((option) => option.code === phoneCountry)?.dial ?? 'Code'}
               onChange={(value) => {
                 setPhoneCountry(value as CountryCode | '');
                 if (errors.phoneNumber)
@@ -361,17 +378,20 @@ function RegistrantForm({
               }}
               disabled={disabled || saving}
               searchable
-              searchLabel="Search codes or countries"
-              menuMinWidth={280}
-              className="w-[7.5rem] shrink-0"
-              triggerClassName="h-10 w-full font-mono text-[13px] font-normal sm:h-10 sm:w-full sm:min-w-0"
+              searchLabel="Search countries or codes"
+              anchorRef={phoneField}
+              menuMinWidth={300}
+              className="shrink-0"
+              triggerClassName="h-full w-auto min-w-0 gap-1 rounded-none border-0 border-r border-input/80 bg-secondary/50 px-3 font-mono text-[13px] font-medium shadow-none hover:bg-secondary sm:h-full sm:w-auto sm:min-w-0"
             />
-            <Input
+            <input
               {...input('phoneNumber', {
                 autoComplete: 'tel-national',
                 type: 'tel',
                 inputMode: 'tel',
+                placeholder: 'Phone number',
               })}
+              className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
         </Field>

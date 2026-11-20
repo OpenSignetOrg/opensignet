@@ -179,7 +179,7 @@ const quote = await fetch(
       },
       {
         title: 'Retention is deliberately short',
-        body: 'Message content and delivery artifacts follow a 30-day retention policy. Durable identity, billing, and payment records are separate from temporary communication content.',
+        body: 'Message content and delivery artifacts are kept for 15 days on the Free plan and 30 days on paid plans. Durable identity, billing, and payment records are separate from temporary communication content.',
       },
     ],
     codeTitle: 'Queue a text email',

@@ -1,4 +1,4 @@
-import { ArrowRight, Calculator, Check, Gauge, ShieldCheck, Sprout, Zap } from 'lucide-react';
+import { ArrowRight, Calculator, Check, Gauge, ShieldCheck, Sprout, X, Zap } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ENTERPRISE_PLAN_OFFERS, SERVICE_PLAN_CATALOG } from '@opensignet/shared';
@@ -14,7 +14,18 @@ import {
 import { PlanCarousel } from './plan-carousel';
 import Link from 'next/link';
 
-const planBlocks = [
+/** A plan feature; `limited` marks what a higher plan does better (shown muted, with a cross). */
+type PlanItem = string | { text: string; limited: true };
+
+const planBlocks: ReadonlyArray<{
+  icon: typeof Sprout;
+  title: string;
+  plan: 'plus' | 'pro' | 'max' | null;
+  monthly: bigint;
+  yearly: bigint;
+  description: string;
+  items: PlanItem[];
+}> = [
   {
     icon: Sprout,
     title: 'Free',
@@ -29,7 +40,7 @@ const planBlocks = [
       '1 email alias per identity',
       '1 API key per identity',
       '20 DNS records per identity',
-      '30-day retention',
+      { text: '15-day retention', limited: true },
     ],
   },
   {
@@ -135,12 +146,28 @@ export function Pricing() {
                         {plan.description}
                       </p>
                       <ul className="mt-5 space-y-2.5">
-                        {plan.items.map((item) => (
-                          <li key={item} className="flex items-start gap-2 text-sm">
-                            <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-orange-700" />
-                            <span>{item}</span>
-                          </li>
-                        ))}
+                        {plan.items.map((item) =>
+                          typeof item === 'string' ? (
+                            <li key={item} className="flex items-start gap-2 text-sm">
+                              <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-orange-700" />
+                              <span>{item}</span>
+                            </li>
+                          ) : (
+                            <li
+                              key={item.text}
+                              className="flex items-start gap-2 text-sm text-muted-foreground"
+                            >
+                              <X
+                                className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground/70"
+                                aria-hidden
+                              />
+                              <span>
+                                {item.text}
+                                <span className="sr-only"> (paid plans keep messages longer)</span>
+                              </span>
+                            </li>
+                          ),
+                        )}
                       </ul>
                       <PlanCta plan={plan.plan} label={plan.plan ? 'Get now' : 'Use Free'} />
                     </CardContent>

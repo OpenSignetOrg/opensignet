@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { RotateCw, ShieldCheck, UserRound, Wallet } from 'lucide-react';
+import { RotateCw, ShieldCheck, UserRound } from 'lucide-react';
 import { PageHeader } from '@/components/console/identity-bits';
 import { PageTabs } from '@/components/console/page-tabs';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,6 @@ import { StepUpProvider } from './step-up';
 const TABS = [
   { href: '/settings', label: 'Account', icon: UserRound },
   { href: '/settings/security', label: 'Security', icon: ShieldCheck },
-  { href: '/settings/wallet', label: 'Wallet', icon: Wallet },
 ] as const;
 
 /** Settings inside the console: heading, section tabs and the section body. */
@@ -21,9 +20,31 @@ export function SettingsShell({ children }: { children: ReactNode }) {
     <>
       <PageHeader
         title="Settings"
-        description="Your profile, how you sign in, and your OpenSignet wallet."
+        description="Your profile, how you sign in, and your account’s security."
       />
       <PageTabs tabs={TABS} label="Settings sections" />
+      <AccountSurface>{children}</AccountSurface>
+    </>
+  );
+}
+
+/** The wallet, its own section of the console (not part of Settings). */
+export function WalletShell({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <PageHeader
+        title="Wallet"
+        description="Your OpenSignet wallet on Base: balance, approvals and payment methods."
+      />
+      <AccountSurface>{children}</AccountSurface>
+    </>
+  );
+}
+
+/** The account data and approval prompts the settings and wallet pages share. */
+function AccountSurface({ children }: { children: ReactNode }) {
+  return (
+    <>
       <div className="max-w-3xl">
         <div className="min-w-0">
           <SettingsProvider
@@ -50,7 +71,7 @@ export function SettingsShell({ children }: { children: ReactNode }) {
 
 function SettingsSkeleton() {
   return (
-    <div className="flex flex-col gap-6" aria-busy="true" aria-label="Loading settings">
+    <div className="flex flex-col gap-6" aria-busy="true" aria-label="Loading">
       {[176, 240].map((height) => (
         <div
           key={height}

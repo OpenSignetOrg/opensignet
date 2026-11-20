@@ -1,10 +1,10 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { SecurityTab } from './security-tab';
+import { AccountTab } from './account-tab';
 
 /** Reads the Google linking result (?google=...) that the backend redirect reports. */
-export function SecurityTabPage() {
+export function AccountTabPage() {
   const params = useSearchParams();
-  return <SecurityTab google={params.get('google')} />;
+  return <AccountTab google={params.get('google')} />;
 }

@@ -47,7 +47,7 @@ export function PaymentMethodsCard() {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('card') === 'added') {
       setWaiting(true);
-      window.history.replaceState(null, '', '/settings/wallet#payment-methods');
+      window.history.replaceState(null, '', '/wallet#payment-methods');
     }
     void load();
   }, [load]);

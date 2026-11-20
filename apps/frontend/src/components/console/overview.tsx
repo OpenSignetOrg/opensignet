@@ -52,7 +52,7 @@ export function ConsoleOverview() {
           label="Wallet balance"
           hint="USDC on Base"
           value={balanceLoading ? null : `$${Number(balanceFormatted).toFixed(2)}`}
-          href="/settings/wallet"
+          href="/wallet"
         />
         <Stat
           label="Renewing in 30 days"

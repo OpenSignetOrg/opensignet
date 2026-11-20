@@ -88,7 +88,7 @@ export function OwnerManagementGate({
             </Button>
           ) : access === 'not-owner' ? (
             <Button asChild variant="outline" className="w-full sm:w-auto">
-              <Link href="/settings/security#sign-in-methods">
+              <Link href="/settings#sign-in-methods">
                 <Wallet className="h-4 w-4" aria-hidden />
                 Link a wallet
               </Link>

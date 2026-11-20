@@ -178,7 +178,7 @@ const sections: readonly LegalSection[] = [
           'One-time codes and wallet approvals: deleted within one day after they expire.',
           'Signed-in device records: deleted 30 days after the session ends.',
           'Security log: 13 months.',
-          'Mailbox messages: 30 days, unless a plan states otherwise.',
+          'Mailbox messages: 15 days on the Free plan and 30 days on paid plans.',
           'Payment records: as long as tax and accounting law requires.',
         ]}
       />

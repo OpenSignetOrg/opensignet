@@ -68,7 +68,7 @@ export const PRICING_FAQS: readonly FaqItem[] = [
   {
     question: 'What comes with the Free plan?',
     answer:
-      'Every account starts on it: up to 3 identities and 3,000 emails a month (sent and received combined) shared between them. Each identity gets a professional inbox, 1 email alias, 1 API key, 20 DNS records, 30-day message retention and an onchain AgentID. You pay only for each domain at its registrar price.',
+      'Every account starts on it: up to 3 identities and 3,000 emails a month (sent and received combined) shared between them. Each identity gets a professional inbox, 1 email alias, 1 API key, 20 DNS records, 15-day message retention (30 days on paid plans) and an onchain AgentID. You pay only for each domain at its registrar price.',
   },
   {
     question: 'How is the domain price set?',

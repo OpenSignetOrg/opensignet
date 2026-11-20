@@ -27,7 +27,10 @@ export const OPENSIGNET_API_BASE_URL = 'https://api.opensignet.com/api/v1';
 export const SERVICE_PLAN_KEYS = ['included', 'plus', 'pro', 'max', 'enterprise'] as const;
 /** Plans are billed monthly or yearly; each period has its own price in the catalog. */
 export const SERVICE_PLAN_INTERVALS = ['monthly', 'yearly'] as const;
+/** How long mailbox messages are kept on paid plans. */
 export const EMAIL_RETENTION_DAYS = 30;
+/** How long mailbox messages are kept on the Free plan. */
+export const FREE_EMAIL_RETENTION_DAYS = 15;
 export const EMAIL_REQUESTS_PER_SECOND = 12;
 export const ENTERPRISE_EMAIL_TIERS = [
   150_000, 200_000, 300_000, 400_000, 500_000, 600_000, 700_000, 800_000, 900_000, 1_000_000,
@@ -48,7 +51,7 @@ export const SERVICE_PLAN_CATALOG = {
       apiKeys: 1,
       dnsRecords: 20,
       emailAliases: 1,
-      emailRetentionDays: EMAIL_RETENTION_DAYS,
+      emailRetentionDays: FREE_EMAIL_RETENTION_DAYS,
     },
     supportTier: 'standard',
   },
