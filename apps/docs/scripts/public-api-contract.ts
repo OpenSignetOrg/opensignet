@@ -13,6 +13,7 @@ import {
   registrationPaymentRejectionSchema,
   registrationProgressSchema,
   registrationResultSchema,
+  registrantSchema,
 } from '@opensignet/shared';
 import { z } from 'zod';
 
@@ -176,6 +177,8 @@ export const HTTP_SUCCESS_CONTRACT: Readonly<
   getAgent: { 200: 'AgentRecordResponse' },
   quoteRegistration: { 200: 'QuoteResponse' },
   registerAgent: { 200: 'RegistrationResult', 202: 'RegistrationHandleResponse' },
+  getRegistrant: { 200: 'RegistrantResponse' },
+  saveRegistrant: { 200: 'RegistrantResponse' },
   getRegistration: { 200: 'RegistrationProgress' },
   listRegistrations: { 200: 'RegistrationList' },
   listRegistrationNotices: { 200: 'NoticeListResponse' },
@@ -282,6 +285,16 @@ export function publicSchemas(): Record<string, Schema> {
   const schemas: Record<string, Schema> = {
     Address: convert(addressSchema),
     RegistrationRequest: convert(registrationParamsSchema),
+    Registrant: convert(registrantSchema),
+    RegistrantResponse: object(
+      {
+        registrant: {
+          anyOf: [ref('Registrant'), { type: 'object', nullable: true, enum: [null] }],
+          description: 'Null until the account saves its domain owner.',
+        },
+      },
+      ['registrant'],
+    ),
     RegistrationResult: projected(registrationResultSchema),
     RegistrationProgress: projected(registrationProgressSchema),
     RegistrationAccepted: projected(registrationAcceptedSchema),
@@ -783,6 +796,18 @@ export function publicOperations(): PublicOperation[] {
       },
     },
   );
+  add('get', '/registrant', 'getRegistrant', 'register', 'Read the saved domain owner', {
+    scope: 'owner',
+    description:
+      'The domain owner (registrant) saved on the account, or null. Registries require one for every domain. Personal data: never send it to model context or public logs.',
+  });
+  add('put', '/registrant', 'saveRegistrant', 'register', 'Save the domain owner once', {
+    scope: 'owner',
+    request: ref('Registrant'),
+    idempotency: 'replace',
+    description:
+      'Saves the domain owner (registrant) for the domains registered next; existing domains keep theirs. A field that cannot be used is refused with 422 INVALID_REGISTRANT and details.field. Personal data: never send it to model context or public logs.',
+  });
   const expectedPayer = (required = false) =>
     query('expectedPayer', ref('Address'), required, 'Intended payer check, not authentication.');
   add(

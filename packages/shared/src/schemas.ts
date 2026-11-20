@@ -247,6 +247,27 @@ export type EmailAliasDeleteResult =
 
 export const tldSchema = z.enum(['xyz', 'com', 'ai', 'org', 'io', 'net', 'co', 'app']);
 
+/** The domain owner's details, as `PUT /api/v1/registrant` and the register request take them. */
+export const registrantSchema = z
+  .object({
+    firstName: z.string().trim().min(1).max(60),
+    lastName: z.string().trim().min(1).max(60),
+    company: z.string().trim().max(100).optional(),
+    email: z.string().trim().email().max(254),
+    phoneCountryCode: z.string().regex(/^\+\d{1,4}$/),
+    phoneNumber: z.string().regex(/^[\d ().-]{4,24}$/),
+    street: z.string().trim().min(1).max(120),
+    city: z.string().trim().min(1).max(60),
+    state: z.string().trim().max(60).optional(),
+    postalCode: z
+      .string()
+      .trim()
+      .max(16)
+      .regex(/^[A-Za-z0-9 -]*$/),
+    country: z.string().regex(/^[A-Za-z]{2}$/),
+  })
+  .strict();
+
 export const registrationParamsSchema = z.object({
   preferredName: domainLabelSchema,
   tld: tldSchema,
@@ -271,6 +292,7 @@ export const registrationParamsSchema = z.object({
       socials: z.record(z.string(), z.string().trim().max(2048)).optional(),
     })
     .optional(),
+  registrant: registrantSchema.optional(),
   wallet: addressSchema,
   turnstileToken: z.string().optional(),
 });

@@ -199,6 +199,11 @@ export const REGISTER_FAQS: readonly FaqItem[] = [
     ),
   },
   {
+    question: 'Why do you ask for the domain owner’s details?',
+    answer:
+      'Registries require a real, reachable owner for every domain, and that is what makes the domain legally yours. You add your name, email, phone and address once; they are saved privately to your account and used for every domain after. Domain privacy keeps them out of public WHOIS wherever the registry allows it.',
+  },
+  {
     question: 'When am I charged?',
     answer:
       'Only when you pay at checkout, and only the exact total you see first. Paid from your OpenSignet wallet, no code is needed because it only ever pays OpenSignet. If the registry refuses the name after you pay, the payment is refunded.',

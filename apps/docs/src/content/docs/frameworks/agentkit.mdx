@@ -29,14 +29,15 @@ const provider = new OpenSignetActionProvider({
 const actions = provider.getActions();
 ```
 
-| Option                | Default                             | Use                                                                                         |
-| --------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------- |
-| `apiUrl`              | `https://api.opensignet.com/api/v1` | Set only for another documented OpenSignet environment.                                     |
-| `apiKey`              | none                                | Agent-scoped key for DNS, email, and management calls. Load it from a secret store.         |
-| `network`             | `base`                              | `base` or `base-sepolia`.                                                                   |
-| `baseRpcUrl`          | `https://mainnet.base.org`          | Base RPC used for wallet operations and receipts.                                           |
-| `builderCode`         | none                                | Public ERC-8021 app code. Required for direct Base writes: auto-renew and vault withdrawal. |
-| `renewalVaultAddress` | none                                | RenewalVault address. Required for auto-renew.                                              |
+| Option                | Default                             | Use                                                                                                         |
+| --------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `apiUrl`              | `https://api.opensignet.com/api/v1` | Set only for another documented OpenSignet environment.                                                     |
+| `apiKey`              | none                                | Agent-scoped key for DNS, email, and management calls. Load it from a secret store.                         |
+| `network`             | `base`                              | `base` or `base-sepolia`.                                                                                   |
+| `registrant`          | none                                | The domain owner ([fields](/api-reference/register/#domain-owner)); registries require it for every domain. |
+| `baseRpcUrl`          | `https://mainnet.base.org`          | Base RPC used for wallet operations and receipts.                                                           |
+| `builderCode`         | none                                | Public ERC-8021 app code. Required for direct Base writes: auto-renew and vault withdrawal.                 |
+| `renewalVaultAddress` | none                                | RenewalVault address. Required for auto-renew.                                                              |
 
 The public builder code is needed only for direct Base writes. Missing or invalid attribution
 stops those actions before a transaction is sent; reads, signatures, and x402 paid requests do not

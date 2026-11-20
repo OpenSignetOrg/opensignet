@@ -45,7 +45,9 @@ import {
   DNS_RECORD_TYPES,
   dnsRecordSchema,
   dnsRecordObjectSchema,
+  registrantSchema,
   type DnsRecordInput,
+  type Registrant,
 } from '@opensignet/shared';
 import {
   OPENSIGNET_API_BASE_URL,
@@ -59,6 +61,27 @@ import { base, baseSepolia } from 'viem/chains';
 const API_URL = process.env.OPENSIGNET_API_URL ?? OPENSIGNET_API_BASE_URL;
 const NETWORK = (process.env.OPENSIGNET_NETWORK ?? 'base') as 'base' | 'base-sepolia';
 const AGENT_PRIVATE_KEY = process.env.AGENT_PRIVATE_KEY;
+
+/**
+ * The domain owner set once for this server (OPENSIGNET_REGISTRANT, as JSON), used when a
+ * register call doesn't send one. Registries require it for every domain.
+ */
+function configuredRegistrant(): Registrant | undefined {
+  const raw = process.env.OPENSIGNET_REGISTRANT;
+  if (!raw) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('OPENSIGNET_REGISTRANT must be JSON with the domain owner’s details.');
+  }
+  const result = registrantSchema.safeParse(parsed);
+  if (!result.success)
+    throw new Error(
+      `OPENSIGNET_REGISTRANT is incomplete: ${result.error.issues.map((issue) => issue.path.join('.')).join(', ')}.`,
+    );
+  return result.data;
+}
 const OPENSIGNET_API_KEY = process.env.OPENSIGNET_API_KEY;
 const OPENSIGNET_BUILDER_CODE = process.env.OPENSIGNET_BUILDER_CODE;
 const RENEWAL_VAULT_ADDRESS = process.env.RENEWAL_VAULT_ADDRESS as Address | undefined;
@@ -277,6 +300,35 @@ const TOOL_DEFINITIONS: Tool[] = [
         },
         years: { type: 'integer', default: 1, minimum: 1, maximum: 10 },
         autoRenew: { type: 'boolean', default: true },
+        registrant: {
+          type: 'object',
+          description:
+            'The domain owner, which registries require for every domain. Optional when OPENSIGNET_REGISTRANT is set for this server. Kept out of public WHOIS wherever the registry allows it.',
+          properties: {
+            firstName: { type: 'string' },
+            lastName: { type: 'string' },
+            company: { type: 'string' },
+            email: { type: 'string' },
+            phoneCountryCode: { type: 'string', description: 'With the plus, for example +880' },
+            phoneNumber: { type: 'string' },
+            street: { type: 'string' },
+            city: { type: 'string' },
+            state: { type: 'string' },
+            postalCode: { type: 'string', description: 'Empty where the country has none' },
+            country: { type: 'string', description: 'ISO 3166-1 alpha-2, for example BD' },
+          },
+          required: [
+            'firstName',
+            'lastName',
+            'email',
+            'phoneCountryCode',
+            'phoneNumber',
+            'street',
+            'city',
+            'postalCode',
+            'country',
+          ],
+        },
         dnsTarget: { type: 'string', description: 'URL or IP to point the domain at' },
         metadata: {
           type: 'object',
@@ -745,13 +797,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             emailUsername: z.string().optional(),
             years: z.number().int().min(1).max(10).default(1),
             autoRenew: z.boolean().default(true),
+            registrant: registrantSchema.optional(),
             dnsTarget: z.string().optional(),
             metadata: z.record(z.string(), z.any()).optional(),
           })
           .parse(args);
+        const registrant = a.registrant ?? configuredRegistrant();
         const account = privateKeyToAccount(AGENT_PRIVATE_KEY as `0x${string}`);
         const result = await client.register({
           ...a,
+          ...(registrant ? { registrant } : {}),
           wallet: account.address,
           ownerAddress: a.ownerAddress as `0x${string}` | undefined,
           metadata: a.metadata as never,

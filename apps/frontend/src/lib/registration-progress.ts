@@ -134,10 +134,18 @@ export function attemptStartedAt(attempt: RegistrationAttempt) {
   return Number(attempt.clientId.split('-')[0]);
 }
 
+/**
+ * How far the registration's start may read before the attempt's own time. The attempt is timed
+ * by the web server (to the second) and the registration by the database, whose clocks can differ
+ * slightly; without this a real match can be missed around a second boundary.
+ */
+export const ATTEMPT_CLOCK_TOLERANCE_MS = 5_000;
+
 export function matchAttempt(attempt: RegistrationAttempt, items: RegistrationProgress[]) {
   const matches = items.filter(
     (item) =>
-      item.domain === attempt.domain && Date.parse(item.startedAt) >= attemptStartedAt(attempt),
+      item.domain === attempt.domain &&
+      Date.parse(item.startedAt) >= attemptStartedAt(attempt) - ATTEMPT_CLOCK_TOLERANCE_MS,
   );
   // Ambiguity is not permission to attach an unrelated purchase or pay again.
   return matches.length === 1 ? matches[0] : undefined;

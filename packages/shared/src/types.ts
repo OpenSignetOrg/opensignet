@@ -48,8 +48,32 @@ export interface RegistrationParams {
   autoRenew: boolean;
   dnsTarget?: string;
   metadata?: AgentMetadata;
+  /**
+   * The domain owner's details, which registries require for every domain. A signed-in account
+   * saves them once (PUT /api/v1/registrant); a payer without an account sends them here.
+   */
+  registrant?: Registrant;
   wallet: Address;
   turnstileToken?: string;
+}
+
+/** The domain owner (registrant). Private: hidden from public WHOIS by domain privacy. */
+export interface Registrant {
+  firstName: string;
+  lastName: string;
+  company?: string;
+  email: string;
+  /** International dialling code with the plus, for example "+880". */
+  phoneCountryCode: string;
+  /** The national number. */
+  phoneNumber: string;
+  street: string;
+  city: string;
+  state?: string;
+  /** Empty where the country has no postal codes. */
+  postalCode: string;
+  /** ISO 3166-1 alpha-2, for example "BD". */
+  country: string;
 }
 
 export interface RegistrationResult {

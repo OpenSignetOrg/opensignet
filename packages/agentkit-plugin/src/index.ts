@@ -3,7 +3,13 @@
 // the records again before any request is sent.
 import { z } from 'zod/v3';
 import { OpenSignet, encodeSetAutoRenewCalldata } from '@opensignet/sdk';
-import { DNS_RECORD_TYPES, dnsRecordSchema, type DnsRecordInput } from '@opensignet/shared';
+import {
+  DNS_RECORD_TYPES,
+  dnsRecordSchema,
+  registrantSchema,
+  type DnsRecordInput,
+  type Registrant,
+} from '@opensignet/shared';
 import { OPENSIGNET_API_BASE_URL, SUPPORTED_TLDS } from '@opensignet/shared/constants';
 import { createPublicClient, createWalletClient, http, type Address } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
@@ -29,6 +35,23 @@ const RegisterSchema = z.object({
   dnsTarget: z.string().url().optional(),
   years: z.number().int().min(1).max(10).default(1),
   autoRenew: z.boolean().default(true),
+  /** The domain owner; defaults to the provider's `registrant` option. */
+  registrant: z
+    .object({
+      firstName: z.string(),
+      lastName: z.string(),
+      company: z.string().optional(),
+      email: z.string(),
+      phoneCountryCode: z.string(),
+      phoneNumber: z.string(),
+      street: z.string(),
+      city: z.string(),
+      state: z.string().optional(),
+      postalCode: z.string(),
+      country: z.string(),
+    })
+    .strict()
+    .optional(),
 });
 
 const QuoteSchema = z.object({
@@ -205,6 +228,8 @@ export interface OpenSignetActionProviderOptions {
   network?: 'base' | 'base-sepolia';
   /** Public ERC-8021 app code required for direct Base transaction actions. */
   builderCode?: string;
+  /** The domain owner for registrations, which registries require for every domain. */
+  registrant?: Registrant;
 }
 
 export class OpenSignetActionProvider {
@@ -216,6 +241,7 @@ export class OpenSignetActionProvider {
   private readonly renewalVaultAddress?: string;
   private readonly network: 'base' | 'base-sepolia';
   private readonly builderCode?: string;
+  private readonly registrant?: Registrant;
 
   constructor(opts: OpenSignetActionProviderOptions = {}) {
     this.apiUrl = opts.apiUrl ?? OPENSIGNET_API_BASE_URL;
@@ -224,6 +250,7 @@ export class OpenSignetActionProvider {
     this.renewalVaultAddress = opts.renewalVaultAddress;
     this.network = opts.network ?? 'base';
     this.builderCode = opts.builderCode;
+    this.registrant = opts.registrant ? registrantSchema.parse(opts.registrant) : undefined;
   }
 
   private createOpenSignet(walletProvider: WalletProvider) {
@@ -420,7 +447,14 @@ export class OpenSignetActionProvider {
   private async register(walletProvider: WalletProvider, args: z.infer<typeof RegisterSchema>) {
     const { ad, wallet, publicClient } = this.createOpenSignet(walletProvider);
 
-    const result = await ad.register({ ...args, emailEnabled: true, wallet } as any);
+    // Checked against the shared contract before anything is sent.
+    const registrant = args.registrant ? registrantSchema.parse(args.registrant) : this.registrant;
+    const result = await ad.register({
+      ...args,
+      ...(registrant ? { registrant } : {}),
+      emailEnabled: true,
+      wallet,
+    } as any);
 
     let autoRenewMsg = '';
     if (args.autoRenew && this.renewalVaultAddress) {

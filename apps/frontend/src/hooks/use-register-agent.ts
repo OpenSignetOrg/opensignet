@@ -98,6 +98,17 @@ export function useRegisterAgent() {
         !isFetching)),
   );
 
+  // A completed registration stays completed on this page, even after the tracker files the
+  // completion away and no longer links it to this attempt.
+  useEffect(() => {
+    if (progress?.status !== 'completed') return;
+    setState((previous) =>
+      previous.phase === 'success'
+        ? previous
+        : { ...previous, phase: 'success', result: progress, paymentStatus: 'settled' },
+    );
+  }, [progress]);
+
   useEffect(() => {
     if (!releasedRejection) return;
     setAttempt(null);

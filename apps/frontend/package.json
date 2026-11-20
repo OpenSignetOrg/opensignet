@@ -28,9 +28,9 @@
     "test:seo": "node --test \"../../scripts/seo/test/*.test.ts\""
   },
   "dependencies": {
+    "@coinbase/wallet-sdk": "4.3.7",
     "@opensignet/sdk": "workspace:*",
     "@opensignet/shared": "workspace:*",
-    "@coinbase/wallet-sdk": "4.3.7",
     "@radix-ui/react-slot": "^1.3.0",
     "@tanstack/react-query": "^5.101.2",
     "@walletconnect/ethereum-provider": "2.21.8",
@@ -38,6 +38,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "ethers": "6.17.0",
+    "libphonenumber-js": "1.13.15",
     "lucide-react": "1.40.0",
     "next": "16.4.6",
     "react": "19.2.8",

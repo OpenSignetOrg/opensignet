@@ -105,8 +105,10 @@ const sections: readonly LegalSection[] = [
         <p>
           Domain names are registered through accredited registrars and are subject to the rules of
           their registry, the registrar’s terms and ICANN policies, including the Uniform
-          Domain-Name Dispute-Resolution Policy. Registration requires the contact information those
-          rules require.
+          Domain-Name Dispute-Resolution Policy. Registration requires the owner details those rules
+          require. They must be accurate and kept current; a registry can suspend a domain whose
+          owner details are false or unreachable. Changing the owner of a domain you already hold is
+          a change of registrant under registry rules and is done with support.
         </p>
         <LegalList
           items={[

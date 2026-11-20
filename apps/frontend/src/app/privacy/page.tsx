@@ -141,9 +141,11 @@ const sections: readonly LegalSection[] = [
               <strong>Payment processors</strong>, to handle card payments.
             </>,
             <>
-              <strong>Registrars and registries</strong>, to register and renew domains. Some
-              registration data may be published in registration directories where their rules
-              require it.
+              <strong>Registrars and registries</strong>, to register and renew domains. They
+              receive the domain owner details you give us (name, email, phone and postal address)
+              because registry rules require them. Domain privacy keeps them out of public WHOIS
+              wherever the registry allows it. Details sent with a single registration request,
+              without an account, are deleted from our systems once the registrar has them.
             </>,
           ]}
         />

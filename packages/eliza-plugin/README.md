@@ -38,6 +38,9 @@ The default API is `https://api.opensignet.com/api/v1`. Configure
 
 - `OPENSIGNET_API_KEY` authorizes agent-scoped DNS, email, and management calls.
 - `AGENT_PRIVATE_KEY` is needed only for wallet-authorized or paid operations.
+- `OPENSIGNET_REGISTRANT` is the domain owner as JSON; registries require it for
+  every domain the agent registers. It stays out of public WHOIS wherever the
+  registry allows it.
 - `OPENSIGNET_NETWORK` defaults to `base`.
 - `BASE_RPC_URL` optionally selects the Base RPC used for wallet operations.
 - `RENEWAL_VAULT_ADDRESS` is required for direct auto-renew actions.

@@ -39,7 +39,18 @@ POST /api/v1/agents/register
   "registerEns": false,
   "emailUsername": "hello",
   "years": 1,
-  "autoRenew": true
+  "autoRenew": true,
+  "registrant": {
+    "firstName": "Ada",
+    "lastName": "Lovelace",
+    "email": "ada@example.com",
+    "phoneCountryCode": "+44",
+    "phoneNumber": "20 7946 0958",
+    "street": "12 St James Square",
+    "city": "London",
+    "postalCode": "SW1Y 4JH",
+    "country": "GB"
+  }
 }
 ```
 
@@ -113,22 +124,58 @@ settlement takes precedence. Checks requiring operator review report
 
 ## Fields
 
-| Field              | Required | Notes                                                       |
-| ------------------ | -------- | ----------------------------------------------------------- |
-| `wallet`           | yes      | Wallet authorizing payment                                  |
-| `ownerAddress`     | no       | Final owner; defaults to `wallet`                           |
-| `preferredName`    | yes      | Requested domain label                                      |
-| `tld`              | yes      | `.com`, `.xyz`, `.ai`, `.org`, `.io`, `.net`, `.co`, `.app` |
-| `registerBasename` | no       | Defaults to `false`; Basenames open soon (see below)        |
-| `registerEns`      | no       | Defaults to `false`; ENS names open soon (see below)        |
-| `emailUsername`    | no       | Primary address local-part; defaults to `hello`             |
-| `years`            | no       | Initial term from 1 through 10 years                        |
-| `autoRenew`        | no       | Defaults to `true`; renews yearly before the domain expires |
+| Field              | Required  | Notes                                                         |
+| ------------------ | --------- | ------------------------------------------------------------- |
+| `wallet`           | yes       | Wallet authorizing payment                                    |
+| `ownerAddress`     | no        | Final owner; defaults to `wallet`                             |
+| `preferredName`    | yes       | Requested domain label                                        |
+| `tld`              | yes       | `.com`, `.xyz`, `.ai`, `.org`, `.io`, `.net`, `.co`, `.app`   |
+| `registerBasename` | no        | Defaults to `false`; Basenames open soon (see below)          |
+| `registerEns`      | no        | Defaults to `false`; ENS names open soon (see below)          |
+| `emailUsername`    | no        | Primary address local-part; defaults to `hello`               |
+| `years`            | no        | Initial term from 1 through 10 years                          |
+| `autoRenew`        | no        | Defaults to `true`; renews yearly before the domain expires   |
+| `registrant`       | see below | The domain owner's details; see [Domain owner](#domain-owner) |
 
 Email and managed DNS are part of every registration. The onchain AgentID, Basenames and ENS
 names open soon; until then a request with `registerBasename` or `registerEns` set to `true` is
 refused with `409 ONCHAIN_NAMES_UNAVAILABLE` before any payment. Optional onchain names will be
 charged only when selected.
+
+## Domain owner
+
+Registries require a real, reachable owner (registrant) for every domain. A request without one
+is refused before any price with `409 REGISTRANT_REQUIRED`; nothing is charged.
+
+- **Signed-in accounts** save the details once and every registration uses them:
+
+  ```http
+  GET /api/v1/registrant        -> { "registrant": Registrant | null }
+  PUT /api/v1/registrant        -> { "registrant": Registrant }
+  ```
+
+- **A payer without an account** (an agent paying alone with x402) sends `registrant` with the
+  request. It is part of the exact request a payment covers, kept only until the registrar has
+  it, then deleted; the stored request keeps only its digest.
+
+| Field              | Required | Notes                                               |
+| ------------------ | -------- | --------------------------------------------------- |
+| `firstName`        | yes      | Up to 60 characters                                 |
+| `lastName`         | yes      | Up to 60 characters                                 |
+| `email`            | yes      | A mailbox the owner reads; registries may verify it |
+| `phoneCountryCode` | yes      | With the plus, for example `+880`                   |
+| `phoneNumber`      | yes      | The national number; spaces and dashes are ignored  |
+| `street`           | yes      | House, road and area on one line                    |
+| `city`             | yes      |                                                     |
+| `postalCode`       | yes      | Empty string where the country has no postal codes  |
+| `country`          | yes      | ISO 3166-1 alpha-2, for example `BD`                |
+| `state`            | no       | State, province or region                           |
+| `company`          | no       | When a company owns the domain                      |
+
+A field that can't be used is refused with `422 INVALID_REGISTRANT` and names it in
+`details.field`. Domain privacy keeps the details out of public WHOIS wherever the registry
+allows it. A change applies to domains registered afterwards; changing the owner of an existing
+domain is a registry change of registrant, done with support.
 
 A registration names no plan. Plans apply to the whole account and are bought or changed only
 from the dashboard or the [pricing page](https://opensignet.com/pricing), by card or in USDC on

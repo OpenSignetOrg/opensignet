@@ -4,6 +4,7 @@ import {
   DNS_RECORD_TYPES,
   dnsRecordSchema as sharedDnsRecordSchema,
   type DnsRecordInput,
+  registrantSchema,
 } from '@opensignet/shared';
 import { createPublicClient, createWalletClient, http, type Address } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -249,8 +250,18 @@ export const registerIdentityAction = {
     });
     if (!account || !walletClient || !publicClient) throw new Error('AGENT_PRIVATE_KEY not set');
 
+    // The domain owner, set once for the agent (OPENSIGNET_REGISTRANT, as JSON): registries
+    // require it for every domain.
+    const ownerSetting = runtime.getSetting('OPENSIGNET_REGISTRANT');
+    let registrant: unknown;
+    try {
+      registrant = ownerSetting ? JSON.parse(ownerSetting) : undefined;
+    } catch {
+      throw new Error('OPENSIGNET_REGISTRANT must be JSON with the domain owner’s details.');
+    }
     const result = await ad.register({
       ...validated,
+      ...(registrant ? { registrant: registrantSchema.parse(registrant) } : {}),
       emailEnabled: true,
       wallet: account.address,
     } as any);

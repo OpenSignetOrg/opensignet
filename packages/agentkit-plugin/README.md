@@ -23,6 +23,10 @@ const opensignet = new OpenSignetActionProvider({
 const actions = opensignet.getActions();
 ```
 
+Registries require a real owner for every domain: pass `registrant` (the
+[owner fields](https://docs.opensignet.com/api-reference/register/#domain-owner))
+to the provider, or with each register action.
+
 The AgentKit runtime supplies its wallet provider when invoking an action. The
 default API is `https://api.opensignet.com/api/v1`; set `apiUrl` only when a
 different documented OpenSignet environment is intentionally used.

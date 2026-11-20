@@ -56,6 +56,7 @@ protected secret controls, never in a committed configuration file.
 | Wallet key                      | Signs registration and renewal-vault actions. Use a dedicated wallet. The setting name is in the [package README](https://github.com/OpenSignetOrg/opensignet/tree/main/packages/mcp-server). |
 | `OPENSIGNET_API_URL`            | Defaults to `https://api.opensignet.com/api/v1`.                                                                                                                                              |
 | `OPENSIGNET_NETWORK`            | `base` (default) or `base-sepolia`.                                                                                                                                                           |
+| `OPENSIGNET_REGISTRANT`         | The domain owner as JSON (the [registrant fields](/api-reference/register/#domain-owner)), used when `register_agent` is called without `registrant`. Registries require it for every domain. |
 | `OPENSIGNET_BUILDER_CODE`       | Required for tools that send a Base transaction directly, such as enabling auto-renew.                                                                                                        |
 | `RENEWAL_VAULT_ADDRESS`         | RenewalVault contract used by the renewal tools.                                                                                                                                              |
 

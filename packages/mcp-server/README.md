@@ -156,6 +156,13 @@ must reconnect after an overflow and must not blindly replay a write whose
 outcome is unknown. This transport bound is separate from API payload limits;
 larger payloads are not automatically supported by splitting a single JSON line.
 
+## Domain owner
+
+Registries require a real owner (registrant) for every domain. Pass `registrant`
+to `register_agent`, or set `OPENSIGNET_REGISTRANT` to the owner's details as
+JSON once for the server. The fields are listed in the
+[register reference](https://docs.opensignet.com/api-reference/register/#domain-owner).
+
 ## Signing credentials
 
 Supply `AGENT_PRIVATE_KEY` only when an enabled operation requires a wallet

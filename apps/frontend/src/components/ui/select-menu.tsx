@@ -10,12 +10,16 @@ import {
   type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface SelectMenuOption<T extends string | number> {
   value: T;
   label: string;
+  /** Muted text at the end of the row, for example a dialling code. */
+  hint?: string;
+  /** Extra words the search matches, for example a country's code. */
+  keywords?: string;
 }
 
 /** Tallest the menu grows before it scrolls inside (22rem). */
@@ -49,6 +53,28 @@ function focusOption(option: HTMLButtonElement | null | undefined) {
 
 /** Height of the optional heading row at the top of the menu. */
 const HEADING_HEIGHT = 28;
+/** Height of the search field at the top of a searchable menu. */
+const SEARCH_HEIGHT = 48;
+
+/** Options matching the search: labels that start with it first, then any other match. */
+function matching<T extends string | number>(
+  options: readonly SelectMenuOption<T>[],
+  query: string,
+): readonly SelectMenuOption<T>[] {
+  const wanted = query.trim().toLowerCase();
+  if (!wanted) return options;
+  const starts: SelectMenuOption<T>[] = [];
+  const contains: SelectMenuOption<T>[] = [];
+  for (const option of options) {
+    const label = option.label.toLowerCase();
+    if (label.startsWith(wanted)) starts.push(option);
+    else if (
+      `${label} ${option.keywords ?? ''} ${option.hint ?? ''}`.toLowerCase().includes(wanted)
+    )
+      contains.push(option);
+  }
+  return [...starts, ...contains];
+}
 
 /**
  * The platform's dropdown: the selected option is
@@ -71,6 +97,8 @@ export function SelectMenu<T extends string | number>({
   anchorRef,
   heading,
   optionClassName,
+  searchable = false,
+  searchLabel = 'Search',
 }: {
   value: T;
   options: readonly SelectMenuOption<T>[];
@@ -94,13 +122,20 @@ export function SelectMenu<T extends string | number>({
   /** Small label at the top of the menu, for example "Popular". */
   heading?: string;
   optionClassName?: string;
+  /** Adds a search field at the top of the menu, for long lists such as countries. */
+  searchable?: boolean;
+  /** The search field's accessible name and placeholder, for example "Search countries". */
+  searchLabel?: string;
 }) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const visible = searchable ? matching(options, query) : options;
   const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
   const selectedIndex = Math.max(
     0,
@@ -110,7 +145,8 @@ export function SelectMenu<T extends string | number>({
 
   useEffect(() => {
     if (!open) return;
-    focusOption(optionRefs.current[selectedIndex]);
+    if (searchable) searchRef.current?.focus({ preventScroll: true });
+    else focusOption(optionRefs.current[selectedIndex]);
     const inside = (target: EventTarget | null) =>
       Boolean(
         rootRef.current?.contains(target as Node | null) ||
@@ -123,7 +159,11 @@ export function SelectMenu<T extends string | number>({
       if (inside(event.target)) return;
       setOpen(false);
     };
-    const onResize = () => setOpen(false);
+    // A phone keyboard opening (for the search field) changes only the height: keep the menu.
+    const openWidth = window.innerWidth;
+    const onResize = () => {
+      if (window.innerWidth !== openWidth) setOpen(false);
+    };
     document.addEventListener('mousedown', onPointerDown);
     window.addEventListener('scroll', onScroll, { capture: true, passive: true });
     window.addEventListener('resize', onResize);
@@ -132,7 +172,11 @@ export function SelectMenu<T extends string | number>({
       window.removeEventListener('scroll', onScroll, { capture: true });
       window.removeEventListener('resize', onResize);
     };
-  }, [open, selectedIndex]);
+  }, [open, selectedIndex, searchable]);
+
+  useEffect(() => {
+    if (!open) setQuery('');
+  }, [open]);
 
   const openMenu = () => {
     const trigger = triggerRef.current?.getBoundingClientRect();
@@ -142,7 +186,10 @@ export function SelectMenu<T extends string | number>({
     const viewportHeight = window.innerHeight;
     const wanted = Math.min(
       MENU_MAX_HEIGHT,
-      options.length * OPTION_HEIGHT + PANEL_PADDING + (heading ? HEADING_HEIGHT : 0),
+      options.length * OPTION_HEIGHT +
+        PANEL_PADDING +
+        (heading ? HEADING_HEIGHT : 0) +
+        (searchable ? SEARCH_HEIGHT : 0),
     );
     const below = viewportHeight - rect.bottom - MENU_OFFSET - EDGE_CLEARANCE;
     const above = rect.top - MENU_OFFSET - HEADER_CLEARANCE;
@@ -171,13 +218,19 @@ export function SelectMenu<T extends string | number>({
   };
 
   const onListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const count = visible.length;
+    const inSearch = event.target === searchRef.current;
     const current = optionRefs.current.findIndex((element) => element === document.activeElement);
     const focusAt = (index: number) =>
-      focusOption(optionRefs.current[(index + options.length) % options.length]);
-    if (event.key === 'ArrowDown') focusAt(current + 1);
-    else if (event.key === 'ArrowUp') focusAt(current - 1);
-    else if (event.key === 'Home') focusAt(0);
-    else if (event.key === 'End') focusAt(options.length - 1);
+      count ? focusOption(optionRefs.current[(index + count) % count]) : undefined;
+    if (inSearch && event.key === 'Enter') {
+      if (visible[0]) choose(visible[0].value);
+    } else if (event.key === 'ArrowDown') focusAt(inSearch ? 0 : current + 1);
+    else if (event.key === 'ArrowUp') {
+      if (searchable && current === 0) searchRef.current?.focus({ preventScroll: true });
+      else focusAt(current - 1);
+    } else if (!inSearch && event.key === 'Home') focusAt(0);
+    else if (!inSearch && event.key === 'End') focusAt(count - 1);
     else if (event.key === 'Escape') {
       setOpen(false);
       triggerRef.current?.focus();
@@ -230,6 +283,25 @@ export function SelectMenu<T extends string | number>({
               className="fixed z-30 overflow-y-auto overscroll-contain rounded-lg border border-border bg-popover p-1 shadow-[0_22px_48px_-24px_rgba(20,21,18,0.5)]"
               style={menuStyle}
             >
+              {searchable ? (
+                <div className="sticky top-0 z-10 -mx-1 -mt-1 mb-1 border-b border-border/70 bg-popover p-1.5">
+                  <label className="flex h-9 items-center gap-2 rounded-md border border-input bg-background/70 px-2.5 focus-within:ring-2 focus-within:ring-ring/70">
+                    <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                    <input
+                      ref={searchRef}
+                      type="search"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder={searchLabel}
+                      aria-label={searchLabel}
+                      aria-controls={listId}
+                      autoComplete="off"
+                      spellCheck={false}
+                      className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+                    />
+                  </label>
+                </div>
+              ) : null}
               {heading ? (
                 <div
                   role="presentation"
@@ -238,7 +310,12 @@ export function SelectMenu<T extends string | number>({
                   {heading}
                 </div>
               ) : null}
-              {options.map((option, index) => {
+              {searchable && visible.length === 0 ? (
+                <p role="status" className="px-3 py-3 text-sm text-muted-foreground">
+                  No match. Try another spelling.
+                </p>
+              ) : null}
+              {visible.map((option, index) => {
                 const active = option.value === value;
                 return (
                   <button
@@ -258,8 +335,20 @@ export function SelectMenu<T extends string | number>({
                       optionClassName,
                     )}
                   >
-                    {option.label}
-                    {active ? <Check className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
+                    <span className="min-w-0 truncate">{option.label}</span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {option.hint ? (
+                        <span
+                          className={cn(
+                            'font-mono text-xs',
+                            active ? 'text-primary-foreground/75' : 'text-muted-foreground',
+                          )}
+                        >
+                          {option.hint}
+                        </span>
+                      ) : null}
+                      {active ? <Check className="h-3.5 w-3.5 shrink-0" aria-hidden /> : null}
+                    </span>
                   </button>
                 );
               })}

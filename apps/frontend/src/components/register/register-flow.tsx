@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConnectWalletButton } from '@/components/wallet/connect-wallet-button';
+import { RegistrantStep } from './registrant-step';
 import { MethodPicker, WalletPanel } from '@/components/checkout/checkout-client';
 import { parseDomainEntry } from '@/lib/domain-entry';
 import { SelectMenu } from '@/components/ui/select-menu';
@@ -123,6 +124,8 @@ export function RegisterFlow() {
     signedIn && address && (payWithWallet ? true : connectedLinked),
   );
   const loginHref = '/sign-in?return_to=%2Fregister';
+  /** The domain owner's details are saved (registries require them). */
+  const [registrantReady, setRegistrantReady] = useState(false);
 
   const [name, setName] = useState('');
   const [searchedName, setSearchedName] = useState('');
@@ -361,6 +364,7 @@ export function RegisterFlow() {
   const canSubmit = useMemo(() => {
     if (!isConnected || !address) return false;
     if (!payerAuthenticated || tracking.connection !== 'ready' || existingPurchase) return false;
+    if (!registrantReady) return false;
     if (wrongChain) return false;
     if (!validName || !availability?.available || checking) return false;
     if (!quoteReady) return false;
@@ -389,6 +393,7 @@ export function RegisterFlow() {
     payerAuthenticated,
     tracking.connection,
     existingPurchase,
+    registrantReady,
   ]);
 
   const handleTurnstileToken = useCallback((token: string | null) => {
@@ -886,10 +891,28 @@ export function RegisterFlow() {
         </Card>
       )}
 
-      {/* Step 4: Payment */}
+      {/* Step 4: The domain owner, once per account */}
+      {signedIn ? (
+        <Card className="premium-surface">
+          <CardContent className="p-4 sm:p-6">
+            <RegistrantStep
+              step={showQuoteCard ? 4 : 3}
+              accountEmail={
+                accountSession.status === 'signed-in' ? accountSession.account.email : null
+              }
+              disabled={regState.phase !== 'idle' && regState.phase !== 'error'}
+              onReadyChange={setRegistrantReady}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* Step 5: Payment */}
       <Card className="premium-surface">
         <CardContent className="p-4 sm:p-6">
-          <h2 className="text-sm font-semibold">{showQuoteCard ? 4 : 3}. Payment</h2>
+          <h2 className="text-sm font-semibold">
+            {(showQuoteCard ? 4 : 3) + (signedIn ? 1 : 0)}. Payment
+          </h2>
           {accountSession.status === 'loading' ? (
             <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground" role="status">
               <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
@@ -1125,6 +1148,8 @@ export function RegisterFlow() {
               ) : (
                 'Pick a valid available name'
               )
+            ) : !registrantReady ? (
+              'Add the domain owner first'
             ) : insufficientBalance ? (
               'Insufficient USDC balance'
             ) : !validEmailUsername ? (
