@@ -93,7 +93,7 @@ export const PRICING_FAQS: readonly FaqItem[] = [
   {
     question: 'How do renewals work?',
     answer:
-      'Automatic renewal is a switch, on by default when you buy, and you can turn it off or on again at any time in Billing. Your plan renews on your card, or from your OpenSignet wallet if you paid in USDC; we remind you 14, 7 and 1 day before a wallet renewal. Each domain renews yearly from your wallet or your saved card, whichever you choose on its page, from 30 to 7 days before it expires. A change of payment method applies from the next renewal. If a renewal cannot be paid, the service can expire, so keep enough in your wallet or a valid card saved.',
+      'Automatic renewal is a switch, on by default when you buy, and you can turn it off or on again at any time in Billing. Your plan renews on your card, or from your OpenSignet wallet if you paid in USDC; we remind you 14, 7 and 1 day before a wallet renewal. Each domain renews yearly from your wallet or your saved card, whichever you choose on its page, from 30 to 7 days before it expires. A change of payment method applies from the next renewal, and a declined card is tried once more a day later. If a renewal cannot be paid, the service can expire, so keep enough in your wallet or a valid card saved.',
   },
   {
     question: 'Are payments refundable?',

@@ -181,15 +181,17 @@ export function PlanSummary({ sample }: { sample?: AccountPlan | null }) {
             title="Your account"
             items={[
               {
-                label: 'Identities',
-                limit: identities,
-                used: usage?.identities.used ?? null,
-              },
-              {
                 label: 'Email a month',
                 limit: emails,
                 used: usage?.monthlyEmails.used ?? null,
-                note: 'Shared by every identity',
+                note: usage
+                  ? `Resets ${new Date(usage.monthlyEmails.resetsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`
+                  : 'Shared by every identity',
+              },
+              {
+                label: 'Identities',
+                limit: identities,
+                used: usage?.identities.used ?? null,
               },
             ]}
           />
@@ -201,7 +203,7 @@ export function PlanSummary({ sample }: { sample?: AccountPlan | null }) {
                 label: 'Email aliases',
                 limit: limits.emailAliases,
                 highest: usage?.emailAliases.highest ?? null,
-                note: 'Extra addresses for the inbox',
+                note: 'For the inbox',
               },
               { label: 'API keys', limit: limits.apiKeys, highest: usage?.apiKeys.highest ?? null },
               {
@@ -305,6 +307,7 @@ function LimitFigure({ item }: { item: LimitItem }) {
               )}
             >
               {full ? 'All in use' : `${figure(left)} left`}
+              {item.note ? ` · ${item.note}` : ''}
             </div>
           </>
         ) : (

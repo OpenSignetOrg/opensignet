@@ -171,7 +171,8 @@ const sections: readonly LegalSection[] = [
               OpenSignet wallet or your saved card, as chosen for each domain. A renewal is taken
               from 30 days to 7 days before the domain expires. From the wallet it is never more
               than a quarter above the price when you turned it on; if the price rises further, we
-              ask you first.
+              ask you first. If your card is declined, we try it once more a day later and email you
+              each time.
             </>,
             <>
               <strong>Reminders.</strong> We email you 14, 7 and 1 day before a USDC plan renewal,

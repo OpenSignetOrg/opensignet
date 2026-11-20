@@ -12,7 +12,9 @@ A signed-in session belongs to the account, whichever method started it.
 Every account comes with its own OpenSignet wallet on Base, created with the account. While the
 owner is signed in it pays OpenSignet (plans, domains and their renewals) without a code; sending
 funds anywhere else, exporting its key and changing its approvers need the owner's approval (an
-email code or their linked wallet). You can also link an outside wallet to the account.
+email code or their linked wallet). **Withdraw** in the wallet settings sends USDC to any address
+on Base after that approval; OpenSignet pays the network fee and emails a receipt with the
+transaction. You can also link an outside wallet to the account.
 
 Cards are saved on Stripe's own page, at a card checkout or with **Add card** in the wallet
 settings. OpenSignet keeps only the brand, the last four digits and the expiry. The default card
@@ -89,7 +91,8 @@ Do not submit a second paid registration merely because a request is still proce
 Automatic renewal is a switch, on by default when you buy. The plan renews on the card it was
 bought with, or from the OpenSignet wallet when it was paid in USDC. Each identity's domain renews
 yearly, from 30 to 7 days before it expires, from the wallet or the saved card, chosen on the
-identity's Domain tab. A change of method applies from the next renewal. The vault signs a wallet
+identity's Domain tab. A change of method applies from the next renewal. A declined card is tried
+once more a day later, with an email each time. The vault signs a wallet
 renewal only when it falls due, only to OpenSignet and never above that item's ceiling.
 
 ## Identity profile

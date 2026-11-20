@@ -118,7 +118,11 @@ export interface AccountClient {
   applyApproverChange(challengeId: string): Promise<EmbeddedWallet | null>;
   /** Single-use token for the wallet window's export. */
   walletExportToken(): Promise<string>;
-  /** Asks for an approval to pay OpenSignet from the wallet (the exact checkout authorization). */
+  /**
+   * Asks the approvers to approve sending `value` (USDC atomic units) from the wallet to `to` on
+   * Base. The withdrawal itself is completed with `completeWithdrawal` (lib/withdraw).
+   */
+  startWithdrawal(factor: 'email' | 'wallet', to: string, value: string): Promise<VaultChallenge>;
   /**
    * Pays OpenSignet from the OpenSignet wallet for a purchase (no code; the vault only pays
    * OpenSignet). `renews` also lets the item renew automatically. Returns the signature.
@@ -231,6 +235,8 @@ export function createAccountClient(fetcher: typeof fetch = fetch): AccountClien
       }).then(() => undefined),
     applyApproverChange: async (challengeId) =>
       (await call('wallet/approvers', 'POST', walletViewSchema, { challengeId })).wallet,
+    startWithdrawal: (factor, to, value) =>
+      call('wallet/withdrawals/start', 'POST', vaultChallengeSchema, { factor, to, value }),
     walletExportToken: async () =>
       (await call('wallet/export/start', 'POST', walletTokenSchema, {})).token,
     payFromWallet: async (payment) =>

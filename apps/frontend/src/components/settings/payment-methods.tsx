@@ -173,24 +173,21 @@ export function PaymentMethodsCard() {
                   </span>
                   {card.isDefault ? <Badge variant="outline">Default</Badge> : null}
                 </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs tabular-nums text-muted-foreground">
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs tabular-nums text-muted-foreground">
                   <span>
                     Expires {String(card.expMonth).padStart(2, '0')}/{card.expYear}
                   </span>
                   {!card.isDefault ? (
-                    <span className="inline-flex items-center gap-x-2">
-                      <span aria-hidden>·</span>
-                      <button
-                        type="button"
-                        disabled={busy !== null}
-                        onClick={() =>
-                          void act(card.id, () => makeDefaultCard(card.id), 'Default card changed')
-                        }
-                        className="rounded font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:opacity-60"
-                      >
-                        Make default
-                      </button>
-                    </span>
+                    <button
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() =>
+                        void act(card.id, () => makeDefaultCard(card.id), 'Default card changed')
+                      }
+                      className="rounded font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:opacity-60"
+                    >
+                      Make default
+                    </button>
                   ) : null}
                 </div>
               </div>

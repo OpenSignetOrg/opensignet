@@ -4,6 +4,7 @@ import { useEffect, useId, useState } from 'react';
 import { base } from 'wagmi/chains';
 import type { Address } from 'viem';
 import {
+  ArrowUpRight,
   Check,
   Copy,
   KeyRound,
@@ -26,6 +27,7 @@ import type { EmbeddedWallet, WalletApprover } from '@/lib/account-contract';
 import { openWalletWindow, WalletWindowError, type SignRequest } from '@/lib/wallet-window';
 import { formatUsd, shortAddress } from '@/lib/utils';
 import { PaymentMethodsCard } from './payment-methods';
+import { WithdrawDialog } from './withdraw-dialog';
 import { useSettings } from './settings-context';
 import { SettingsCard } from './settings-ui';
 
@@ -41,7 +43,7 @@ export function WalletTab() {
   if (!wallet) return <SettingUpCard />;
   return (
     <>
-      <WalletCard address={wallet.address as Address} />
+      <WalletCard address={wallet.address as Address} approvers={wallet.approvers} />
       <PaymentMethodsCard />
       <ApproversCard wallet={wallet} />
       <ExportCard />
@@ -117,9 +119,16 @@ function SettingUpCard() {
   );
 }
 
-function WalletCard({ address }: { address: Address }) {
-  const { balanceNumber, isLoading } = useUsdcBalance(address, base.id);
+function WalletCard({
+  address,
+  approvers,
+}: {
+  address: Address;
+  approvers: WalletApprover[] | null;
+}) {
+  const { balanceNumber, balanceAtomic, isLoading, refetch } = useUsdcBalance(address, base.id);
   const [copied, setCopied] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
 
   async function copy() {
     try {
@@ -163,24 +172,53 @@ function WalletCard({ address }: { address: Address }) {
           </div>
           <p className="mt-2 text-xs leading-5 text-muted-foreground">
             Send USDC on Base to this address to pay with crypto and keep automatic renewals funded.
+            Withdraw sends it to any wallet on Base.
           </p>
         </div>
-        <div className="rounded-xl border border-border/80 bg-background/50 px-4 py-3 sm:min-w-[180px] sm:text-right">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Balance
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-border/80 bg-background/50 px-4 py-3 sm:min-w-[220px] sm:flex-col sm:items-end sm:justify-start sm:gap-2">
+          <div className="sm:text-right">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Balance
+            </div>
+            <div className="mt-1 text-xl font-semibold tabular-nums">
+              {isLoading ? (
+                <span className="inline-block h-6 w-20 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+              ) : (
+                <>
+                  {formatUsd(balanceNumber).slice(1)}{' '}
+                  <span className="text-sm font-medium text-muted-foreground">USDC</span>
+                </>
+              )}
+            </div>
           </div>
-          <div className="mt-1 text-xl font-semibold tabular-nums">
-            {isLoading ? (
-              <span className="inline-block h-6 w-20 animate-pulse rounded bg-muted motion-reduce:animate-none" />
-            ) : (
-              <>
-                {formatUsd(balanceNumber).slice(1)}{' '}
-                <span className="text-sm font-medium text-muted-foreground">USDC</span>
-              </>
-            )}
-          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0"
+            disabled={!approvers?.length}
+            title={
+              approvers?.length ? undefined : 'Add an email or link a wallet to approve withdrawals'
+            }
+            onClick={() => setWithdrawing(true)}
+          >
+            <ArrowUpRight className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+            Withdraw
+          </Button>
         </div>
       </div>
+      {withdrawing && approvers?.length ? (
+        <WithdrawDialog
+          wallet={address}
+          balance={balanceAtomic}
+          approvers={approvers}
+          onClose={() => setWithdrawing(false)}
+          onSent={() => {
+            setWithdrawing(false);
+            void refetch();
+          }}
+        />
+      ) : null}
     </SettingsCard>
   );
 }

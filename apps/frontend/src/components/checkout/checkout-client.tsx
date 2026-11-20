@@ -97,8 +97,8 @@ function planFeatures(selection: CheckoutSelection, monthlyEmails: number): stri
       (offer) => offer.monthlyEmails === monthlyEmails && selection.plan === 'enterprise',
     )?.identities ?? limits.identities;
   return [
-    `${identities.toLocaleString('en-US')} identities`,
     `${monthlyEmails.toLocaleString('en-US')} emails a month, sent and received`,
+    `${identities.toLocaleString('en-US')} identities`,
     `${limits.emailAliases} email aliases per identity`,
     `${limits.apiKeys} API keys per identity`,
     `${limits.dnsRecords} DNS records per identity`,

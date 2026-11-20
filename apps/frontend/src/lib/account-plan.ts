@@ -169,7 +169,13 @@ const count = z.number().int().nonnegative();
 export const planUsageSchema = z
   .object({
     identities: z.object({ used: count, limit: count }).strict(),
-    monthlyEmails: z.object({ used: count.nullable(), limit: count }).strict(),
+    monthlyEmails: z
+      .object({
+        used: count.nullable(),
+        limit: count,
+        resetsAt: z.string().datetime({ offset: true }),
+      })
+      .strict(),
     apiKeys: z.object({ highest: count.nullable(), limit: count }).strict(),
     dnsRecords: z.object({ highest: count.nullable(), limit: count }).strict(),
     emailAliases: z.object({ highest: count.nullable(), limit: count }).strict(),

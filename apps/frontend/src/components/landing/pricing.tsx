@@ -23,8 +23,8 @@ const planBlocks = [
     yearly: SERVICE_PLAN_CATALOG.included.yearlyPriceUsdcAtomic,
     description: 'Everything you need to start, included with every domain.',
     items: [
-      '3 identities',
       '3,000 sent + received/month',
+      '3 identities',
       'Professional inbox on your domain',
       '1 email alias per identity',
       '1 API key per identity',
@@ -40,8 +40,8 @@ const planBlocks = [
     yearly: SERVICE_PLAN_CATALOG.plus.yearlyPriceUsdcAtomic,
     description: 'Higher limits for active identities and production apps.',
     items: [
-      '10 identities',
       '25,000 sent + received/month',
+      '10 identities',
       '5 email aliases per identity',
       '5 API keys per identity',
       '50 DNS records per identity',
@@ -56,8 +56,8 @@ const planBlocks = [
     yearly: SERVICE_PLAN_CATALOG.pro.yearlyPriceUsdcAtomic,
     description: 'For production workloads with larger email volume.',
     items: [
-      '25 identities',
       '50,000 sent + received/month',
+      '25 identities',
       '10 email aliases per identity',
       '10 API keys per identity',
       '100 DNS records per identity',
@@ -73,8 +73,8 @@ const planBlocks = [
     yearly: SERVICE_PLAN_CATALOG.max.yearlyPriceUsdcAtomic,
     description: 'More capacity for busy teams and high-volume apps.',
     items: [
-      '60 identities',
       '100,000 sent + received/month',
+      '60 identities',
       '15 email aliases per identity',
       '20 API keys per identity',
       '150 DNS records per identity',

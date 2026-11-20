@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { ArrowUpRight, ChevronRight, FileText, Globe, KeyRound, Mail, Network } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, Globe, KeyRound, Mail, Network } from 'lucide-react';
 import {
   OwnerManagementGate,
   type ManagementAccess,
@@ -111,35 +111,44 @@ export function IdentityShell({
     { href: `${base}/dns`, label: 'DNS', icon: Network },
     { href: `${base}/keys`, label: 'API keys', icon: KeyRound },
     { href: `${base}/domain`, label: 'Domain', icon: Globe },
-    { href: `${base}/details`, label: 'Details', icon: FileText },
   ] as const;
 
   return (
     <IdentityContext.Provider value={{ view, reload: () => setRevision((value) => value + 1) }}>
       <Breadcrumb domain={agent.domain} />
       <header className="relative mb-6 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-center gap-4 pr-11 sm:pr-0">
+        <div className="flex min-w-0 items-center gap-4">
           <IdentityTile domain={agent.domain} size="lg" />
-          <div className="min-w-0">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 pr-11 sm:pr-0">
               <h1 className="wrap-anywhere text-[24px] font-semibold leading-tight tracking-[-0.02em] sm:text-[28px]">
                 {agent.domain}
               </h1>
-              <StatusPill status={agent.status} />
+              <span className="hidden sm:inline-flex">
+                <StatusPill status={agent.status} />
+              </span>
             </div>
-            <dl className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <dt className="sr-only">Inbox</dt>
-                <Mail className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
-                <dd className="truncate">{inbox?.emailAddress ?? `hello@${agent.domain}`}</dd>
-              </div>
-              {agent.expiresAt ? (
-                <div className="flex items-center gap-1.5">
-                  <dt>Renews</dt>
-                  <dd className="tabular-nums text-foreground/80">{formatDate(agent.expiresAt)}</dd>
+            {/* On phones the status sits at the right of the details, not on a line of its own. */}
+            <div className="mt-1.5 flex items-end justify-between gap-3">
+              <dl className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <dt className="sr-only">Inbox</dt>
+                  <Mail className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-hidden />
+                  <dd className="truncate">{inbox?.emailAddress ?? `hello@${agent.domain}`}</dd>
                 </div>
-              ) : null}
-            </dl>
+                {agent.expiresAt ? (
+                  <div className="flex items-center gap-1.5">
+                    <dt>Renews</dt>
+                    <dd className="tabular-nums text-foreground/80">
+                      {formatDate(agent.expiresAt)}
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+              <span className="shrink-0 sm:hidden">
+                <StatusPill status={agent.status} />
+              </span>
+            </div>
           </div>
         </div>
         <a
