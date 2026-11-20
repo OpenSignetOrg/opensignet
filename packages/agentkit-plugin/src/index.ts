@@ -28,7 +28,7 @@ const RegisterSchema = z.object({
     .optional(),
   dnsTarget: z.string().url().optional(),
   years: z.number().int().min(1).max(10).default(1),
-  autoRenew: z.boolean().default(false),
+  autoRenew: z.boolean().default(true),
 });
 
 const QuoteSchema = z.object({

@@ -971,9 +971,8 @@ export class RegistrationTracker {
       this.nextReadAt.set(payer, this.now() + REGISTRATION_POLL_MS + this.jitter());
       const session = await readRegistrationSession(this.fetcher, signal);
       if (epoch !== this.epoch) return false;
-      if (session.wallet !== payer) throw new RegistrationReadError('unauthorized');
-      if (session.wallet !== this.state.wallet)
-        this.update({ wallet: session.wallet, items: [], attempts: [] });
+      if (!session.wallets.includes(payer)) throw new RegistrationReadError('unauthorized');
+      if (payer !== this.state.wallet) this.update({ wallet: payer, items: [], attempts: [] });
       this.hydrate();
       const items: RegistrationProgress[] = [];
       let discoveryComplete = this.state.discoveryComplete;
@@ -1106,7 +1105,7 @@ export class RegistrationTracker {
             this.deliveredResolutions.get(item.registrationId) !== item.status,
         );
       if (resolutions.length) {
-        this.options.onResolved?.(resolutions, session.wallet);
+        this.options.onResolved?.(resolutions, payer);
         if (epoch !== this.epoch) return false;
         for (const item of resolutions)
           this.deliveredResolutions.set(item.registrationId, item.status);
@@ -1114,7 +1113,7 @@ export class RegistrationTracker {
       // Data refresh is delivered independently of whether a visible tab can show the toast.
       for (const item of this.state.items) {
         if (item.status === 'completed' && this.isPopupEligible(item.registrationId))
-          await this.complete(item, session.wallet, epoch);
+          await this.complete(item, payer, epoch);
         if (epoch !== this.epoch) return false;
       }
       for (const attempt of [...this.state.attempts]) {
@@ -1126,7 +1125,7 @@ export class RegistrationTracker {
         )
           continue;
         const acknowledged =
-          item.status !== 'completed' || (await this.complete(item, session.wallet, epoch));
+          item.status !== 'completed' || (await this.complete(item, payer, epoch));
         if (epoch !== this.epoch) return false;
         if (!acknowledged) continue;
         this.removeTerminalAttempt(attempt);

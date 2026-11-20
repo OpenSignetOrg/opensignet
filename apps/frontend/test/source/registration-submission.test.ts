@@ -424,7 +424,11 @@ test('reservation keys isolate payers and domains, and legacy unknown attempts e
 
 // Execute the real hook with a small hook dispatcher and mocked wallet/provider boundaries.
 // The submission engine, lock adapter, storage transitions and fetch sequence remain real.
-function hookHarness(current: ReturnType<typeof fixture>) {
+function hookHarness(
+  current: ReturnType<typeof fixture>,
+  method: 'wallet' | 'crypto' = 'crypto',
+  calls: { chainChecks: number; walletPayments: string[] } = { chainChecks: 0, walletPayments: [] },
+) {
   const require = createRequire(import.meta.url);
   const { transformSync } = createRequire(require.resolve('tsx/package.json'))('esbuild') as {
     transformSync(source: string, options: object): { code: string };
@@ -495,7 +499,27 @@ function hookHarness(current: ReturnType<typeof fixture>) {
       isBaseChainMismatchError: () => false,
       isBaseChainRequiredError: () => false,
     },
-    '@/hooks/use-base-chain': { useBaseChainGuard: () => ({ ensureBaseChain: async () => true }) },
+    '@/hooks/use-base-chain': {
+      useBaseChainGuard: () => ({
+        ensureBaseChain: async () => {
+          calls.chainChecks++;
+          return true;
+        },
+      }),
+    },
+    // The OpenSignet wallet (method "wallet") or the connected wallet (method "crypto") pays.
+    '@/lib/registration-payer': {
+      useRegistrationPayer: () => ({
+        method,
+        embedded: method === 'wallet' ? current.state.wallet : null,
+        connected: method === 'crypto' ? current.state.wallet : null,
+      }),
+      registrationPayer: { payer: () => current.state.wallet?.toLowerCase() ?? null },
+      createWalletPaymentHeaders: async (response: Response, wallet: string, summary: string) => {
+        calls.walletPayments.push(`${wallet}|${summary}`);
+        return current.dependencies.createPaymentHeaders(response);
+      },
+    },
     '@/lib/transaction-errors': {
       getTransactionErrorCopy: (error: unknown) => ({
         kind: current.dependencies.isSignatureCancellation(error) ? 'cancelled' : 'error',
@@ -642,6 +666,28 @@ test('actual hook does not label confirmed acceptance as an unconfirmed submissi
     assert.equal(hook.render().state.messageCode, undefined);
     assert.equal(current.state.paidRequests, 1);
     assert.equal(current.state.signatures, 1);
+  } finally {
+    hook.dispose();
+  }
+});
+
+test('actual hook pays from the OpenSignet wallet without a chain switch and keeps the payer fixed', async (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 });
+  const current = fixture();
+  context.mock.method(globalThis, 'fetch', current.dependencies.fetcher!);
+  const calls = { chainChecks: 0, walletPayments: [] as string[] };
+  const hook = hookHarness(current, 'wallet', calls);
+  const params = input.body as Parameters<ReturnType<typeof hook.render>['register']>[0];
+  try {
+    await hook.render().register(params);
+    assert.equal(hook.render().state.phase, 'processing');
+    assert.equal(calls.chainChecks, 0);
+    assert.equal(calls.walletPayments.length, 1);
+    assert.match(
+      calls.walletPayments[0]!,
+      new RegExp(`\|${domain.replace('.', '\.')}, \d+ years?$`),
+    );
+    assert.equal(current.state.paidRequests, 1);
   } finally {
     hook.dispose();
   }

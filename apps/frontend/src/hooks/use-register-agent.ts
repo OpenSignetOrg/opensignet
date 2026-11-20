@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useAccount, useWalletClient, useConfig } from 'wagmi';
+import { useWalletClient, useConfig } from 'wagmi';
 import { getAccount, getWalletClient } from 'wagmi/actions';
 import { type Address } from 'viem';
 import { type RegistrationParams } from '@opensignet/shared';
@@ -26,6 +26,11 @@ import {
   runRegistrationSubmission,
   SUBMISSION_UNCONFIRMED_MESSAGE,
 } from '@/lib/registration-submission';
+import {
+  createWalletPaymentHeaders,
+  registrationPayer,
+  useRegistrationPayer,
+} from '@/lib/registration-payer';
 
 export interface RegistrationState {
   phase:
@@ -62,7 +67,9 @@ function retryableUnchargedState(previous: RegistrationState): RegistrationState
 }
 
 export function useRegisterAgent() {
-  const { address } = useAccount();
+  const payerState = useRegistrationPayer();
+  const address =
+    (payerState.method === 'wallet' ? payerState.embedded : payerState.connected) ?? undefined;
   const config = useConfig();
   const { ensureBaseChain } = useBaseChainGuard();
   const { data: walletClient, isLoading, isFetching } = useWalletClient();
@@ -85,9 +92,10 @@ export function useRegisterAgent() {
       : undefined;
   const walletReady = Boolean(
     address &&
-    walletClient?.account?.address?.toLowerCase() === address.toLowerCase() &&
-    !isLoading &&
-    !isFetching,
+    (payerState.method === 'wallet' ||
+      (walletClient?.account?.address?.toLowerCase() === address.toLowerCase() &&
+        !isLoading &&
+        !isFetching)),
   );
 
   useEffect(() => {
@@ -127,23 +135,32 @@ export function useRegisterAgent() {
     busy.current = true;
     try {
       if (!address) throw new Error('Wallet required');
+      const method = payerState.method;
       setAttempt(null);
       setReviewAfter(null);
       setOperationWallet(address.toLowerCase());
-      setState({ phase: 'preparing', message: 'Checking wallet and sign-in...' });
-      if (!(await ensureBaseChain())) throw new BaseChainRequiredError();
+      setState({ phase: 'preparing', message: 'Checking your sign-in and wallet…' });
+      if (method === 'crypto' && !(await ensureBaseChain())) throw new BaseChainRequiredError();
       const walletAddress = address as Address;
       const domain = `${params.preferredName}.${params.tld}`.toLowerCase();
+      const years = params.years ?? 1;
+      const summary = `${domain}, ${years} year${years === 1 ? '' : 's'}`;
       const result = await runRegistrationSubmission(
         { wallet: walletAddress, domain, body: params },
         {
           storage: window.localStorage,
           lock: browserSubmissionLock(navigator.locks),
-          currentWallet: () => getAccount(config).address,
+          currentWallet: () =>
+            method === 'wallet' ? registrationPayer.payer() : getAccount(config).address,
           refreshTracking: () => tracker.refresh(),
           isTrackingReadyForPayer: (wallet) => tracker.isReadyForPayer(wallet),
           hasPurchase: (wallet, target) => tracker.hasPurchase(wallet, target),
           createPaymentHeaders: async (response) => {
+            if (method === 'wallet') {
+              if (registrationPayer.payer() !== walletAddress.toLowerCase())
+                throw new RegistrationSubmissionError('PAYER_CHANGED');
+              return createWalletPaymentHeaders(response, walletAddress, summary);
+            }
             const client = await getWalletClient(config, {
               account: walletAddress,
               chainId: BASE_MAINNET_CHAIN_ID,
@@ -179,7 +196,9 @@ export function useRegisterAgent() {
               paymentStatus: 'pending',
               message:
                 phase === 'awaiting-signature'
-                  ? `Sign payment of ${formatRegistrationPaymentAmount(amount!)} USDC`
+                  ? method === 'wallet'
+                    ? `Paying ${formatRegistrationPaymentAmount(amount!)} USDC from your OpenSignet wallet…`
+                    : `Sign payment of ${formatRegistrationPaymentAmount(amount!)} USDC`
                   : phase === 'processing'
                     ? 'Submitting signed payment. Settlement is not yet confirmed.'
                     : undefined,

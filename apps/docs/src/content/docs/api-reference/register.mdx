@@ -35,12 +35,11 @@ POST /api/v1/agents/register
   "ownerAddress": "0x1111111111111111111111111111111111111111",
   "preferredName": "research-agent",
   "tld": "com",
-  "registerBasename": true,
-  "basenameLabel": "research-agent-ai",
+  "registerBasename": false,
   "registerEns": false,
   "emailUsername": "hello",
   "years": 1,
-  "autoRenew": false
+  "autoRenew": true
 }
 ```
 
@@ -58,6 +57,11 @@ The initial HTTP `402` includes these fields in `accepts[0].extra`:
 | `registrationQuote` | Opaque string. Preserve it exactly; do not decode it into a quote object or reconstruct it.    |
 | `quoteExpiresAt`    | ISO timestamp for the sealed quote's expiry.                                                   |
 | `requestBinding`    | Issued request binding used as the nonce for the request-bound EIP-3009 payment authorization. |
+
+For a signed-in OpenSignet account that asks for automatic renewal, the `402` body also carries
+`walletRenews`: the domain and the most one yearly renewal may charge. Paying from the account's
+OpenSignet wallet with it lets the domain renew from that wallet, within that ceiling, without
+asking again. Other payers can ignore it.
 
 The x402 payment payload must echo the entire selected requirement as `accepted` unchanged,
 including all `extra` fields, not only the three listed above. Submit the exact challenged request
@@ -115,14 +119,16 @@ settlement takes precedence. Checks requiring operator review report
 | `ownerAddress`     | no       | Final owner; defaults to `wallet`                           |
 | `preferredName`    | yes      | Requested domain label                                      |
 | `tld`              | yes      | `.com`, `.xyz`, `.ai`, `.org`, `.io`, `.net`, `.co`, `.app` |
-| `registerBasename` | no       | Defaults to `false`; set `true` to add a Basename           |
-| `registerEns`      | no       | Defaults to `false`; set `true` to add an ENS name          |
+| `registerBasename` | no       | Defaults to `false`; Basenames open soon (see below)        |
+| `registerEns`      | no       | Defaults to `false`; ENS names open soon (see below)        |
 | `emailUsername`    | no       | Primary address local-part; defaults to `hello`             |
 | `years`            | no       | Initial term from 1 through 10 years                        |
-| `autoRenew`        | no       | Records intent; owner still authorizes the vault onchain    |
+| `autoRenew`        | no       | Defaults to `true`; renews yearly before the domain expires |
 
-Email, managed DNS, and AgentID NFT orchestration are part of the identity bundle. Optional
-onchain names are charged only when selected.
+Email and managed DNS are part of every registration. The onchain AgentID, Basenames and ENS
+names open soon; until then a request with `registerBasename` or `registerEns` set to `true` is
+refused with `409 ONCHAIN_NAMES_UNAVAILABLE` before any payment. Optional onchain names will be
+charged only when selected.
 
 A registration names no plan. Plans apply to the whole account and are bought or changed only
 from the dashboard or the [pricing page](https://opensignet.com/pricing), by card or in USDC on

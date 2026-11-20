@@ -258,7 +258,7 @@ export const registrationParamsSchema = z.object({
   emailEnabled: z.boolean().default(true),
   emailUsername: emailUsernameSchema.default('hello'),
   years: z.number().int().min(1).max(10).default(1),
-  autoRenew: z.boolean().default(false),
+  autoRenew: z.boolean().default(true),
   dnsTarget: z.string().optional(),
   metadata: z
     .object({

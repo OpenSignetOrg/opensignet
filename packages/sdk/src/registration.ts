@@ -186,7 +186,7 @@ export class RegistrationClient {
       emailEnabled: true,
       emailUsername: args.emailUsername ?? 'hello',
       years: args.years ?? 1,
-      autoRenew: args.autoRenew ?? false,
+      autoRenew: args.autoRenew ?? true,
     });
     const scope = deadline(options.signal, options.timeoutMs ?? REQUEST_TIMEOUT_MS);
     try {

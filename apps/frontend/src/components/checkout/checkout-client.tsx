@@ -641,7 +641,7 @@ function Checkout({
 }
 
 /** The OpenSignet wallet as a payment source: its balance, and how to add USDC if short. */
-function WalletPanel({
+export function WalletPanel({
   wallet,
   due,
   renewal,
@@ -764,20 +764,29 @@ function PeriodSwitch({
   );
 }
 
-function MethodPicker({
+/** The payment methods as radio cards; `only` limits them (the register page has no card). */
+export function MethodPicker<M extends CheckoutMethod>({
   value,
   onChange,
   disabled,
   cardAvailable,
+  only,
+  descriptions,
 }: {
-  value: CheckoutMethod;
-  onChange: (value: CheckoutMethod) => void;
+  value: M;
+  onChange: (value: M) => void;
   disabled?: boolean;
   cardAvailable: boolean;
+  only?: readonly M[];
+  /** Replaces a method's description where its rules differ (a registration needs a linked wallet). */
+  descriptions?: Partial<Record<M, string>>;
 }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
-  const available = METHODS.filter((method) => method.value !== 'card' || cardAvailable);
-  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, option: CheckoutMethod) => {
+  const shown = METHODS.filter((method): method is (typeof METHODS)[number] & { value: M } =>
+    only ? (only as readonly CheckoutMethod[]).includes(method.value) : true,
+  );
+  const available = shown.filter((method) => method.value !== 'card' || cardAvailable);
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, option: M) => {
     const step =
       event.key === 'ArrowDown' || event.key === 'ArrowRight'
         ? 1
@@ -790,11 +799,11 @@ function MethodPicker({
     const next = available[(index + step + available.length) % available.length];
     if (!next) return;
     onChange(next.value);
-    refs.current[METHODS.findIndex((method) => method.value === next.value)]?.focus();
+    refs.current[shown.findIndex((method) => method.value === next.value)]?.focus();
   };
   return (
     <div role="radiogroup" aria-label="Payment method" className="mt-3 grid gap-3">
-      {METHODS.map(({ value: option, title, description, Icon }, index) => {
+      {shown.map(({ value: option, title, description, Icon }, index) => {
         const selected = option === value;
         const unavailable = option === 'card' && !cardAvailable;
         return (
@@ -839,7 +848,7 @@ function MethodPicker({
                 ) : null}
               </span>
               <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                {description}
+                {descriptions?.[option] ?? description}
               </span>
             </span>
             <span

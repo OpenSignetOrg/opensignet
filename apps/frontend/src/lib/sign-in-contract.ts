@@ -45,6 +45,11 @@ export const sessionSchema = z.union([
     .object({
       authenticated: z.literal(true),
       account: accountSchema,
+      /** The wallets this account pays from: the OpenSignet wallet first, then a linked wallet. */
+      wallets: z
+        .array(z.string().regex(/^0x[\da-fA-F]{40}$/))
+        .max(2)
+        .optional(),
       /** Present when this session was opened with a wallet signature: that wallet and its chain. */
       address: z
         .string()

@@ -395,7 +395,10 @@ export async function runRegistrationSubmission(
       if (dependencies.currentWallet()?.toLowerCase() !== wallet)
         throw new RegistrationSubmissionError('PAYER_CHANGED');
       const session = await readRegistrationSession(fetcher);
-      if (session.wallet !== wallet || dependencies.currentWallet()?.toLowerCase() !== wallet) {
+      if (
+        !session.wallets.includes(wallet) ||
+        dependencies.currentWallet()?.toLowerCase() !== wallet
+      ) {
         throw new RegistrationSubmissionError('PAYER_CHANGED');
       }
       return session;

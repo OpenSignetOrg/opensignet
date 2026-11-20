@@ -3,18 +3,21 @@
 import { CONTACT } from '@/lib/contact';
 import { useState, useCallback, useEffect, useId, useMemo, useRef, type ReactNode } from 'react';
 import { useAccount } from 'wagmi';
+import { base } from 'wagmi/chains';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { HeaderAccountButton } from '@/components/wallet/header-account-button';
+import { ConnectWalletButton } from '@/components/wallet/connect-wallet-button';
+import { MethodPicker, WalletPanel } from '@/components/checkout/checkout-client';
 import { parseDomainEntry } from '@/lib/domain-entry';
 import { SelectMenu } from '@/components/ui/select-menu';
-import { Check, X, Loader2, ArrowRight, ExternalLink, CircleAlert } from 'lucide-react';
+import { Check, X, Loader2, ArrowRight, ExternalLink, CircleAlert, LogIn } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useUsdcBalance } from '@/hooks/use-usdc-balance';
 import { useRegisterAgent } from '@/hooks/use-register-agent';
-import { useSiwe } from '@/hooks/use-siwe';
+import { useAccountSession } from '@/hooks/use-account-session';
+import { registrationPayer, useRegistrationPayer } from '@/lib/registration-payer';
 import { useRegistrationSnapshot, useRegistrationTracker } from './registration-tracker-provider';
 import { TurnstileWidget } from '@/components/turnstile-widget';
 import { toast } from 'sonner';
@@ -89,24 +92,37 @@ const REGISTRATION_YEAR_OPTIONS = Array.from({ length: 10 }, (_, index) => index
  */
 
 export function RegisterFlow() {
-  const { address, isConnected } = useAccount();
+  const { isConnected: walletConnected } = useAccount();
   const {
     effectiveChainId,
     isBaseChain,
     isSwitchingBase: switchingChain,
     ensureBaseChain,
   } = useBaseChainGuard();
+  const accountSession = useAccountSession();
+  const signedIn = accountSession.status === 'signed-in';
+  const payerChoice = useRegistrationPayer();
+  const payWithWallet = payerChoice.method === 'wallet';
+  const address = ((payWithWallet ? payerChoice.embedded : payerChoice.connected) ?? undefined) as
+    `0x${string}` | undefined;
+  const isConnected = Boolean(address) && (payWithWallet || walletConnected);
   const { balanceAtomic, balanceNumber, balanceFormatted } = useUsdcBalance(
     address,
-    effectiveChainId,
+    payWithWallet ? base.id : effectiveChainId,
   );
   const { state: regState, register: submitRegister, reset: resetRegister } = useRegisterAgent();
-  const { session } = useSiwe();
   const tracker = useRegistrationTracker();
   const tracking = useRegistrationSnapshot();
-  const payerAuthenticated = Boolean(
-    session.authenticated && address && session.address?.toLowerCase() === address.toLowerCase(),
+  /** A connected wallet pays only when it is linked to the signed-in account. */
+  const connectedLinked = Boolean(
+    signedIn &&
+    payerChoice.connected &&
+    accountSession.wallets.includes(payerChoice.connected.toLowerCase()),
   );
+  const payerAuthenticated = Boolean(
+    signedIn && address && (payWithWallet ? true : connectedLinked),
+  );
+  const loginHref = '/sign-in?return_to=%2Fregister';
 
   const [name, setName] = useState('');
   const [searchedName, setSearchedName] = useState('');
@@ -119,7 +135,7 @@ export function RegisterFlow() {
   const [ensLabel, setEnsLabel] = useState('');
   const [emailUsername, setEmailUsername] = useState('hello');
   const [years, setYears] = useState(1);
-  const [autoRenew, setAutoRenew] = useState(false);
+  const [autoRenew, setAutoRenew] = useState(true);
 
   const [availability, setAvailability] = useState<AvailabilityResult | null>(null);
   const [checking, setChecking] = useState(false);
@@ -325,7 +341,7 @@ export function RegisterFlow() {
   const quoteRefreshMessage =
     quoteStatus === 'expired' ? 'Quote timed out. Search again to check price again.' : quoteError;
   const totalCost = quoteReady && quote ? Number(quote.totalUsdc) : 0;
-  const isMainnet = isBaseChain;
+  const isMainnet = payWithWallet || isBaseChain;
   const suggestedAlternatives = useMemo(
     () => availability?.alternatives?.filter((alt) => alt.available) ?? [],
     [availability?.alternatives],
@@ -384,7 +400,7 @@ export function RegisterFlow() {
   }
 
   async function handleRegister() {
-    if (wrongChain) {
+    if (!payWithWallet && wrongChain) {
       await handleSwitchBaseMainnet();
       return;
     }
@@ -436,7 +452,7 @@ export function RegisterFlow() {
           setEnsLabel('');
           setEmailUsername('hello');
           setYears(1);
-          setAutoRenew(false);
+          setAutoRenew(true);
         }}
       />
     );
@@ -444,7 +460,7 @@ export function RegisterFlow() {
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      {wrongChain && (
+      {wrongChain && !payWithWallet && (
         <div className="premium-surface rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-start gap-3">
@@ -717,8 +733,14 @@ export function RegisterFlow() {
               </div>
 
               <Toggle
-                label="Enable Auto-Renew"
-                sublabel="Renew automatically before expiry to keep your domain and email active"
+                label="Renew automatically"
+                sublabel={
+                  !autoRenew
+                    ? 'We’ll remind you 30, 7 and 1 day before it expires.'
+                    : payWithWallet
+                      ? 'Renews yearly from your OpenSignet wallet, never above the renewal price.'
+                      : 'Renews yearly from your OpenSignet wallet once you allow it in the domain’s settings.'
+                }
                 checked={autoRenew}
                 onChange={setAutoRenew}
                 disabled={regState.phase !== 'idle' && regState.phase !== 'error'}
@@ -745,6 +767,7 @@ export function RegisterFlow() {
               </h3>
               <Toggle
                 label="Basename on Base"
+                note="Opens soon"
                 sublabel={
                   effectiveBasenameLabel
                     ? `${effectiveBasenameLabel}.base.eth`
@@ -752,7 +775,7 @@ export function RegisterFlow() {
                 }
                 checked={registerBasename}
                 onChange={setRegisterBasename}
-                disabled={regState.phase !== 'idle' && regState.phase !== 'error'}
+                disabled
               />
               {registerBasename && (
                 <NameOverrideInput
@@ -768,10 +791,11 @@ export function RegisterFlow() {
               )}
               <Toggle
                 label="ENS Name on Ethereum"
+                note="Opens soon"
                 sublabel={effectiveEnsLabel ? `${effectiveEnsLabel}.eth` : 'yourname.eth'}
                 checked={registerEns}
                 onChange={setRegisterEns}
-                disabled={regState.phase !== 'idle' && regState.phase !== 'error'}
+                disabled
               />
               {registerEns && (
                 <NameOverrideInput
@@ -848,13 +872,13 @@ export function RegisterFlow() {
                 {registerEns && (
                   <Line label="ENS (includes gas estimate)" value={`$${quote.ensCostUsdc}`} />
                 )}
-                <Line label="Email inbox, DNS and AgentID mint" value="Included" />
+                <Line label="Email inbox and DNS" value="Included" />
                 <div className="border-t border-border/50 pt-3 mt-3">
                   <Line label="Total (USDC on Base)" value={`$${quote.totalUsdc}`} bold />
                 </div>
                 <p className="pt-1 text-xs leading-5 text-muted-foreground">
-                  After payment settles, OpenSignet sets up the domain, DNS, email, any selected
-                  names and the AgentID mint. Each step&apos;s status appears on your dashboard.
+                  After payment settles, OpenSignet registers the domain and sets up its DNS and
+                  your inbox. Each step&apos;s status appears on your dashboard.
                 </p>
               </div>
             ) : null}
@@ -862,8 +886,99 @@ export function RegisterFlow() {
         </Card>
       )}
 
+      {/* Step 4: Payment */}
+      <Card className="premium-surface">
+        <CardContent className="p-4 sm:p-6">
+          <h2 className="text-sm font-semibold">{showQuoteCard ? 4 : 3}. Payment</h2>
+          {accountSession.status === 'loading' ? (
+            <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground" role="status">
+              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden />
+              Checking your sign-in…
+            </p>
+          ) : !signedIn ? (
+            <div className="mt-2 space-y-3">
+              <p className="text-sm leading-6 text-muted-foreground">
+                Sign in so the domain is added to your account. Google, an email code or a wallet
+                all work.
+              </p>
+              <Button asChild size="lg" className="w-full sm:w-auto">
+                <Link href={loginHref}>
+                  <LogIn className="h-4 w-4" aria-hidden />
+                  Sign in to continue
+                </Link>
+              </Button>
+            </div>
+          ) : (
+            <>
+              <MethodPicker
+                value={payerChoice.method}
+                onChange={(method) => registrationPayer.update({ method })}
+                disabled={regState.phase !== 'idle' && regState.phase !== 'error'}
+                cardAvailable={false}
+                only={['wallet', 'crypto'] as const}
+                descriptions={{
+                  crypto: 'USDC on Base from the wallet you linked to your account.',
+                }}
+              />
+              {payWithWallet ? (
+                payerChoice.embedded ? (
+                  <WalletPanel
+                    wallet={{
+                      address: payerChoice.embedded,
+                      approvers: null,
+                      approversInSync: null,
+                    }}
+                    due={
+                      paymentQuote
+                        ? BigInt(paymentQuote.amountAtomic)
+                        : BigInt(Math.round(totalCost * 1_000_000))
+                    }
+                    renewal={false}
+                  />
+                ) : (
+                  <p
+                    className="mt-4 flex items-center gap-2 text-sm text-muted-foreground"
+                    role="status"
+                  >
+                    <Loader2
+                      className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                      aria-hidden
+                    />
+                    Setting up your wallet…
+                  </p>
+                )
+              ) : (
+                <div className="mt-4 flex flex-col gap-2 rounded-xl border border-border/70 bg-background/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    {!payerChoice.connected ? (
+                      'Connect the wallet you linked to your account.'
+                    ) : connectedLinked ? (
+                      <>
+                        Paying from{' '}
+                        <span className="font-mono text-foreground">
+                          {`${payerChoice.connected.slice(0, 6)}…${payerChoice.connected.slice(-4)}`}
+                        </span>
+                      </>
+                    ) : (
+                      'This wallet isn’t linked to your account. Link it in Settings, or pay from your OpenSignet wallet.'
+                    )}
+                  </p>
+                  {!payerChoice.connected ? (
+                    <ConnectWalletButton variant="outline" size="sm" label="Connect wallet" />
+                  ) : !connectedLinked ? (
+                    <Button asChild variant="outline" size="sm" className="self-start sm:self-auto">
+                      <Link href="/settings/security">Open Settings</Link>
+                    </Button>
+                  ) : null}
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Insufficient balance warning */}
-      {insufficientBalance && (
+      {insufficientBalance && !payWithWallet && (
         <Card className="premium-surface border-destructive/40">
           <CardContent className="flex items-start gap-3 px-4 pb-4 pt-4 text-sm sm:px-5 sm:pb-5 sm:pt-5">
             <X className="mt-0.5 h-4 w-4 flex-shrink-0 text-destructive" />
@@ -954,7 +1069,7 @@ export function RegisterFlow() {
 
       {/* Step 4: Submit */}
       <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-end">
-        {turnstileSiteKey && isConnected && (
+        {turnstileSiteKey && payerAuthenticated && (
           <div className="w-full max-w-sm sm:mr-auto">
             <TurnstileWidget
               siteKey={turnstileSiteKey}
@@ -1030,26 +1145,12 @@ export function RegisterFlow() {
               'Complete spam check'
             ) : (
               <>
-                Register agent identity
+                {payWithWallet ? 'Pay and register' : 'Sign payment and register'}
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </>
             )}
           </Button>
-        ) : (
-          <div className="flex w-full flex-col items-stretch gap-2 text-center sm:w-auto sm:items-end sm:text-right">
-            <HeaderAccountButton
-              size="lg"
-              destination={null}
-              prepare={ensureBaseChain}
-              showAccount={false}
-              showError
-              className="w-full sm:w-auto"
-            />
-            <p className="text-xs leading-5 text-muted-foreground">
-              Sign in to continue with your purchase.
-            </p>
-          </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -1239,7 +1340,7 @@ function SuccessScreen({
           {result.agentId && (
             <Link href={`/dashboard/identities/${encodeURIComponent(result.agentId)}`}>
               <Button variant="secondary" className="w-full sm:w-auto">
-                Manage renewal
+                Open identity
               </Button>
             </Link>
           )}
@@ -1248,8 +1349,8 @@ function SuccessScreen({
         {autoRenew && (
           <div className="mt-6 border-t border-border/40 pt-6">
             <div className="text-sm text-muted-foreground">
-              You selected <strong>Enable Auto-Renew</strong>. Since only the domain owner can
-              enable this, open renewal management to authorize it on-chain.
+              It renews automatically every year. You can turn this off or change how it renews in
+              the domain&apos;s settings.
             </div>
           </div>
         )}
@@ -1303,12 +1404,15 @@ function QuoteNotice({
 
 function Toggle({
   label,
+  note,
   sublabel,
   checked,
   onChange,
   disabled,
 }: {
   label: string;
+  /** A short status beside the label, such as "Opens soon". */
+  note?: string;
   sublabel?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
@@ -1327,7 +1431,14 @@ function Toggle({
       )}
     >
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2 font-medium text-sm">{label}</div>
+        <div className="flex flex-wrap items-center gap-2 font-medium text-sm">
+          {label}
+          {note ? (
+            <span className="rounded-full border border-border/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              {note}
+            </span>
+          ) : null}
+        </div>
         {sublabel && (
           <div className="wrap-anywhere mt-0.5 text-xs font-mono text-muted-foreground">
             {sublabel}

@@ -369,11 +369,20 @@ export async function registrationRead(
 export async function readRegistrationSession(fetcher = fetch, signal?: AbortSignal) {
   const response = await registrationRead('/api/v1/auth/session', fetcher, signal);
   const session = z
-    .object({ authenticated: z.boolean(), address: wallet.optional() })
+    .object({
+      authenticated: z.boolean(),
+      address: wallet.optional(),
+      wallets: z.array(wallet).max(2).optional(),
+    })
     .parse(await response.json());
-  if (!session.authenticated || !session.address) throw new RegistrationReadError('unauthorized');
+  // The wallets this account pays from; a session opened by a wallet signature always includes it.
+  const wallets = [
+    ...new Set([...(session.wallets ?? []), ...(session.address ? [session.address] : [])]),
+  ];
+  if (!session.authenticated || wallets.length === 0)
+    throw new RegistrationReadError('unauthorized');
   const serverTime = Date.parse(response.headers.get('date') ?? '');
-  return { wallet: session.address, now: Number.isFinite(serverTime) ? serverTime : Date.now() };
+  return { wallets, now: Number.isFinite(serverTime) ? serverTime : Date.now() };
 }
 
 const completedSubmissionSchema = registrationResultSchema.extend({

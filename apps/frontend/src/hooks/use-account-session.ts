@@ -5,7 +5,14 @@ import { createSignInClient } from '@/lib/sign-in-client';
 import type { Account } from '@/lib/sign-in-contract';
 
 export type AccountSessionState =
-  { status: 'loading' } | { status: 'signed-out' } | { status: 'signed-in'; account: Account };
+  | { status: 'loading' }
+  | { status: 'signed-out' }
+  | {
+      status: 'signed-in';
+      account: Account;
+      /** The wallets this account pays from (lower-case): its OpenSignet wallet and a linked one. */
+      wallets: string[];
+    };
 
 export const SESSION_CHANGED_EVENT = 'opensignet:session-changed';
 
@@ -29,7 +36,11 @@ export function useAccountSession(): AccountSessionState {
           if (current.signal.aborted) return;
           setState(
             session.authenticated
-              ? { status: 'signed-in', account: session.account }
+              ? {
+                  status: 'signed-in',
+                  account: session.account,
+                  wallets: (session.wallets ?? []).map((wallet) => wallet.toLowerCase()),
+                }
               : { status: 'signed-out' },
           );
         })

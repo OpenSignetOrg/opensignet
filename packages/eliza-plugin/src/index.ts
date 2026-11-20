@@ -79,7 +79,7 @@ const registerSchema = z.object({
   emailEnabled: z.boolean().default(true),
   emailUsername: z.string().trim().toLowerCase().regex(EMAIL_USERNAME_PATTERN).default('hello'),
   years: z.number().int().min(1).max(10).default(1),
-  autoRenew: z.boolean().default(false),
+  autoRenew: z.boolean().default(true),
 });
 
 const dnsRecordSchema = z.object({

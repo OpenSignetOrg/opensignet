@@ -276,7 +276,7 @@ const TOOL_DEFINITIONS: Tool[] = [
           default: 'hello',
         },
         years: { type: 'integer', default: 1, minimum: 1, maximum: 10 },
-        autoRenew: { type: 'boolean', default: false },
+        autoRenew: { type: 'boolean', default: true },
         dnsTarget: { type: 'string', description: 'URL or IP to point the domain at' },
         metadata: {
           type: 'object',
@@ -744,7 +744,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             emailEnabled: z.boolean().default(true),
             emailUsername: z.string().optional(),
             years: z.number().int().min(1).max(10).default(1),
-            autoRenew: z.boolean().default(false),
+            autoRenew: z.boolean().default(true),
             dnsTarget: z.string().optional(),
             metadata: z.record(z.string(), z.any()).optional(),
           })

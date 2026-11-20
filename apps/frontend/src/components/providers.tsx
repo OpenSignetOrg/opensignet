@@ -11,6 +11,9 @@ import {
 } from '@/components/register/registration-tracker-provider';
 import { REGISTRATION_CHANGED_EVENT } from '@/lib/registration-progress';
 import { DevDocsLinks } from '@/components/dev-docs-links';
+import { useAccountSession } from '@/hooks/use-account-session';
+import { createAccountClient } from '@/lib/account-client';
+import { registrationPayer } from '@/lib/registration-payer';
 
 /**
  * Top-level client providers. Mounted from the server layout via a client
@@ -48,15 +51,42 @@ export function Providers({ children }: { children: ReactNode }) {
   );
 }
 
+/** Keeps the registration updates on the wallet that pays: the OpenSignet wallet or a connected one. */
 function RegistrationWalletBridge() {
   const config = useConfig();
   const tracker = useRegistrationTracker();
+  const session = useAccountSession();
+  const accountId = session.status === 'signed-in' ? session.account.id : null;
+
   useEffect(() => {
     const synchronize = (account: ReturnType<typeof getAccount>) => {
-      tracker.setExpectedWallet(account.status === 'connected' ? account.address : null);
+      registrationPayer.update({
+        connected: account.status === 'connected' ? account.address : null,
+      });
     };
     synchronize(getAccount(config));
     return watchAccount(config, { onChange: synchronize });
-  }, [config, tracker]);
+  }, [config]);
+
+  useEffect(() => {
+    if (!accountId) {
+      registrationPayer.update({ embedded: null });
+      return;
+    }
+    const controller = new AbortController();
+    createAccountClient()
+      .wallet(controller.signal)
+      .then((wallet) => registrationPayer.update({ embedded: wallet?.address ?? null }))
+      .catch(() => {
+        /* Without the wallet the register page offers sign-in again or another wallet. */
+      });
+    return () => controller.abort();
+  }, [accountId]);
+
+  useEffect(() => {
+    const follow = () => tracker.setExpectedWallet(registrationPayer.payer());
+    follow();
+    return registrationPayer.subscribe(follow);
+  }, [tracker]);
   return null;
 }

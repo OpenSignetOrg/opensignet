@@ -1919,7 +1919,7 @@ export async function runOpenSignetTool(
         emailEnabled: true,
         emailUsername: args.emailUsername as string | undefined,
         years: (args.years as number) ?? 1,
-        autoRenew: (args.autoRenew as boolean) ?? false,
+        autoRenew: (args.autoRenew as boolean | undefined) ?? true,
         dnsTarget: args.dnsTarget as string | undefined,
         ownerAddress: args.ownerAddress as Address | undefined,
         wallet: args.wallet as Address | undefined,

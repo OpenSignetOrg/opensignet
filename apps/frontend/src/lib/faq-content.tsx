@@ -154,7 +154,7 @@ export const REGISTER_FAQS: readonly FaqItem[] = [
   {
     question: 'How do I register a domain?',
     answer:
-      'Type the name you want and pick an ending, or type the full domain, for example myname.com. Search shows whether it is available and what it costs. Then choose your options, sign in and approve the payment.',
+      'Type the name you want and pick an ending, or type the full domain, for example myname.com. Search shows whether it is available and what it costs. Then choose your options, sign in and pay in USDC on Base, from your OpenSignet wallet or a wallet you linked to your account.',
   },
   {
     question: 'Do I need to sign in to search?',
@@ -164,7 +164,7 @@ export const REGISTER_FAQS: readonly FaqItem[] = [
   {
     question: 'What does a registration include?',
     answer:
-      'Your domain with managed DNS, a professional inbox on that domain and an onchain AgentID. A Basename and an ENS name are optional extras.',
+      'Your domain with managed DNS and a professional inbox on that domain. The onchain AgentID, and Basenames and ENS names as optional extras, open soon.',
   },
   {
     question: 'Which domain endings can I choose?',
@@ -186,7 +186,8 @@ export const REGISTER_FAQS: readonly FaqItem[] = [
   },
   {
     question: 'How long can I register a domain for?',
-    answer: 'From 1 to 10 years. Turn on auto-renew if you want it renewed before it expires.',
+    answer:
+      'From 1 to 10 years. Automatic renewal is on by default and renews it yearly before it expires; you can turn it off when you register or later in the domain’s settings.',
   },
   {
     question: 'What will my email address be?',
@@ -200,7 +201,7 @@ export const REGISTER_FAQS: readonly FaqItem[] = [
   {
     question: 'When am I charged?',
     answer:
-      'Only when you approve the payment at checkout. You see the exact total first, including any optional Basename or ENS name.',
+      'Only when you pay at checkout, and only the exact total you see first. Paid from your OpenSignet wallet, no code is needed because it only ever pays OpenSignet. If the registry refuses the name after you pay, the payment is refunded.',
   },
   {
     question: 'What happens after I pay?',
