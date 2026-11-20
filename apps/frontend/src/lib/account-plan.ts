@@ -41,8 +41,8 @@ export const accountPlanSchema = z
       })
       .strict()
       .nullable(),
-    /** False when automatic renewal is on but the next renewal (after a scheduled change) needs a new approval. */
-    autoRenewApproved: z.boolean(),
+    /** Whether card payments are open, so renewals can move to a card. */
+    cardAvailable: z.boolean(),
   })
   .strict();
 export type AccountPlan = z.infer<typeof accountPlanSchema>;
@@ -117,6 +117,77 @@ export async function cancelScheduledChange(): Promise<AccountPlan> {
   if (response.status === 401) throw new AccountPlanError('signed-out');
   if (!response.ok) throw new AccountPlanError('unavailable');
   const parsed = accountPlanSchema.safeParse(await response.json().catch(() => null));
+  if (!parsed.success) throw new AccountPlanError('unavailable');
+  return parsed.data;
+}
+
+/**
+ * Pays the next renewals from the OpenSignet wallet instead of the card (same plan and period);
+ * it applies from the next renewal.
+ *
+ *   POST /api/v1/billing/plan/schedule { plan, planSku, period, method: 'wallet' } -> AccountPlan
+ */
+export async function renewFromWallet(plan: AccountPlan): Promise<AccountPlan> {
+  if (plan.plan === 'included' || !plan.sku || !plan.period) {
+    throw new AccountPlanError('unavailable');
+  }
+  let response: Response;
+  try {
+    response = await fetch('/api/v1/billing/plan/schedule', {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        plan: plan.plan,
+        planSku: plan.sku,
+        period: plan.period,
+        method: 'wallet',
+      }),
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+  } catch {
+    throw new AccountPlanError('unavailable');
+  }
+  if (response.status === 401) throw new AccountPlanError('signed-out');
+  if (!response.ok) throw new AccountPlanError('unavailable');
+  const parsed = accountPlanSchema.safeParse(await response.json().catch(() => null));
+  if (!parsed.success) throw new AccountPlanError('unavailable');
+  return parsed.data;
+}
+
+const count = z.number().int().nonnegative();
+
+/**
+ * How much of the plan the account uses.
+ *
+ *   GET /api/v1/billing/usage -> PlanUsage
+ *
+ * Identities and email count across the account; API keys, DNS records and aliases are limits of
+ * each identity, so `highest` is the fullest identity. `null` means not counted yet.
+ */
+export const planUsageSchema = z
+  .object({
+    identities: z.object({ used: count, limit: count }).strict(),
+    monthlyEmails: z.object({ used: count.nullable(), limit: count }).strict(),
+    apiKeys: z.object({ highest: count.nullable(), limit: count }).strict(),
+    dnsRecords: z.object({ highest: count.nullable(), limit: count }).strict(),
+    emailAliases: z.object({ highest: count.nullable(), limit: count }).strict(),
+  })
+  .strict();
+export type PlanUsage = z.infer<typeof planUsageSchema>;
+
+export async function fetchPlanUsage(signal?: AbortSignal): Promise<PlanUsage> {
+  const response = await fetch('/api/v1/billing/usage', {
+    credentials: 'include',
+    cache: 'no-store',
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(API_TIMEOUT_MS)])
+      : AbortSignal.timeout(API_TIMEOUT_MS),
+  });
+  if (response.status === 401) throw new AccountPlanError('signed-out');
+  if (!response.ok) throw new AccountPlanError('unavailable');
+  const parsed = planUsageSchema.safeParse(await response.json().catch(() => null));
   if (!parsed.success) throw new AccountPlanError('unavailable');
   return parsed.data;
 }

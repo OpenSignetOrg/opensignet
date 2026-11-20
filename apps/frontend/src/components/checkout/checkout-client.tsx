@@ -33,8 +33,7 @@ import { Button } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { SelectMenu } from '@/components/ui/select-menu';
 import { ConnectWalletButton } from '@/components/wallet/connect-wallet-button';
-import { ApprovalSummary } from '@/components/wallet/approval-summary';
-import { VaultApprovalDialog } from '@/components/wallet/vault-approval-dialog';
+import { Switch } from '@/components/ui/switch';
 import { useAccountSession } from '@/hooks/use-account-session';
 import { useBaseChainGuard } from '@/hooks/use-base-chain';
 import { useUsdcBalance } from '@/hooks/use-usdc-balance';
@@ -63,7 +62,6 @@ import {
   type CheckoutQuote,
   type CheckoutSelection,
   type PaidPlanKey,
-  type WalletCheckout,
 } from '@/lib/checkout';
 
 const PLAN_ICONS: Record<PaidPlanKey, LucideIcon> = {
@@ -94,11 +92,16 @@ function planFeatures(selection: CheckoutSelection, monthlyEmails: number): stri
       : entry.supportTier === 'priority'
         ? 'Priority support'
         : null;
+  const identities =
+    ENTERPRISE_PLAN_OFFERS.find(
+      (offer) => offer.monthlyEmails === monthlyEmails && selection.plan === 'enterprise',
+    )?.identities ?? limits.identities;
   return [
+    `${identities.toLocaleString('en-US')} identities`,
     `${monthlyEmails.toLocaleString('en-US')} emails a month, sent and received`,
-    `${limits.apiKeys} API keys`,
-    `${limits.dnsRecords} DNS records`,
-    `${limits.emailAliases} email aliases`,
+    `${limits.emailAliases} email aliases per identity`,
+    `${limits.apiKeys} API keys per identity`,
+    `${limits.dnsRecords} DNS records per identity`,
     ...(support ? [support] : []),
     `${limits.emailRetentionDays}-day email retention`,
   ];
@@ -113,7 +116,7 @@ const METHODS: ReadonlyArray<{
   {
     value: 'wallet',
     title: 'OpenSignet wallet',
-    description: 'USDC from your account’s own wallet, approved by you.',
+    description: 'USDC from your account’s own wallet, paid only to OpenSignet.',
     Icon: Wallet,
   },
   {
@@ -146,6 +149,8 @@ export function CheckoutClient() {
   const router = useRouter();
   const selection = parseCheckoutSelection(params.get('plan'), params.get('period'));
   const canceled = params.get('canceled') === '1';
+  // From the plan card: pay the next renewals by card instead of the wallet.
+  const toCard = params.get('switch') === 'card';
 
   const label = selection ? SERVICE_PLAN_CATALOG[selection.plan].label : null;
   return (
@@ -153,11 +158,13 @@ export function CheckoutClient() {
       <div className="mb-8 sm:mb-10">
         <p className="text-sm font-semibold text-[hsl(var(--brand-orange))]">Checkout</p>
         <h1 className="mt-2 text-balance text-3xl font-bold tracking-tight sm:text-4xl">
-          {label ? `Upgrade to ${label}` : 'Checkout'}
+          {label ? (toCard ? `Renew ${label} by card` : `Upgrade to ${label}`) : 'Checkout'}
         </h1>
         {label ? (
           <p className="mt-3 max-w-2xl text-muted-foreground">
-            Choose how you would like to pay. Your plan covers your whole account.
+            {toCard
+              ? 'Add the card your renewals are paid with. Nothing is charged before your plan renews.'
+              : 'Choose how you would like to pay. Your plan covers your whole account.'}
           </p>
         ) : null}
       </div>
@@ -193,7 +200,9 @@ function Checkout({
   const { ensureBaseChain } = useBaseChainGuard();
   const signedIn = session.status === 'signed-in';
 
-  const [method, setMethod] = useState<CheckoutMethod>('wallet');
+  const [method, setMethod] = useState<CheckoutMethod>(
+    params.get('switch') === 'card' ? 'card' : 'wallet',
+  );
   const [phase, setPhase] = useState<'idle' | 'working' | 'redirecting'>('idle');
   const [notice, setNotice] = useState<Notice>(
     canceled ? { tone: 'info', text: 'Payment canceled. Nothing was charged.' } : null,
@@ -201,7 +210,7 @@ function Checkout({
   const [quote, setQuote] = useState<CheckoutQuote | null>(null);
   const [quoteFailed, setQuoteFailed] = useState(false);
   const [wallet, setWallet] = useState<EmbeddedWallet | null>(null);
-  const [approval, setApproval] = useState<WalletCheckout | null>(null);
+  const [autoRenew, setAutoRenew] = useState(true);
   /** One key per attempt: a retry of the same plan, period and method reuses it. */
   const attemptKey = useRef<string | null>(null);
   const busy = useRef(false);
@@ -291,14 +300,26 @@ function Checkout({
         return;
       }
       if (method === 'card') {
-        const { checkoutUrl } = await startCardCheckout(selection, key);
+        const { checkoutUrl } = await startCardCheckout({ ...selection, autoRenew }, key);
         setPhase('redirecting');
         window.location.assign(checkoutUrl);
         return;
       }
       if (method === 'wallet') {
-        setApproval(await startWalletCheckout(selection, key));
-        setPhase('idle');
+        // Signed in, a payment to OpenSignet needs no code (owner decision): the vault signs the
+        // exact authorization the server issued, and the plan may renew from the wallet with it.
+        const checkout = await startWalletCheckout({ ...selection, autoRenew }, key);
+        const signature = await createAccountClient().payFromWallet({
+          to: checkout.authorization.to,
+          value: checkout.authorization.value,
+          validBefore: checkout.authorization.validBefore,
+          nonce: checkout.authorization.nonce,
+          summary: checkout.summary,
+          ...(checkout.renews ? { renews: checkout.renews } : {}),
+        });
+        setPhase('redirecting');
+        await payWalletCheckout(checkout.checkoutId, signature);
+        router.push(`/checkout/complete?checkout=${encodeURIComponent(checkout.checkoutId)}`);
         return;
       }
       if (!connected) {
@@ -315,8 +336,10 @@ function Checkout({
         chainId: base.id,
       });
       if (!signer?.account) throw new CheckoutError('unavailable');
-      const { checkoutId } = await startCryptoCheckout(selection, key, (requirement) =>
-        createX402PaymentHeaders(requirement, signer),
+      const { checkoutId } = await startCryptoCheckout(
+        { ...selection, autoRenew },
+        key,
+        (requirement) => createX402PaymentHeaders(requirement, signer),
       );
       setPhase('redirecting');
       router.push(`/checkout/complete?checkout=${encodeURIComponent(checkoutId)}`);
@@ -337,7 +360,7 @@ function Checkout({
         ? method === 'card'
           ? 'Preparing payment…'
           : method === 'wallet'
-            ? 'Preparing your approval…'
+            ? 'Paying from your wallet…'
             : 'Waiting for your wallet…'
         : mode === 'at_renewal'
           ? method === 'card'
@@ -524,6 +547,33 @@ function Checkout({
             </div>
           ) : null}
 
+          {signedIn && mode !== 'at_renewal' ? (
+            <div className="mt-5 flex items-start justify-between gap-4 rounded-xl border border-border/70 bg-background/50 px-4 py-3">
+              <div className="min-w-0">
+                <label htmlFor="checkout-auto-renew" className="text-sm font-medium">
+                  Renew automatically
+                </label>
+                <p
+                  id="checkout-auto-renew-help"
+                  className="mt-0.5 text-xs leading-5 text-muted-foreground"
+                >
+                  {autoRenew
+                    ? method === 'card'
+                      ? `Renews each ${periodLabel} on this card. Turn it off any time in Billing.`
+                      : `Renews each ${periodLabel} from your OpenSignet wallet. Turn it off any time in Billing.`
+                    : 'Your plan ends after this period unless you renew it.'}
+                </p>
+              </div>
+              <Switch
+                id="checkout-auto-renew"
+                aria-describedby="checkout-auto-renew-help"
+                checked={autoRenew}
+                disabled={working}
+                onCheckedChange={setAutoRenew}
+              />
+            </div>
+          ) : null}
+
           {quoteFailed ? (
             <InlineNotice className="mt-5">
               The price for your account couldn’t be loaded. Check your connection and try again.
@@ -566,7 +616,7 @@ function Checkout({
             {method === 'card'
               ? "You pay on Stripe's secure page. OpenSignet never sees or stores your card details."
               : method === 'wallet'
-                ? 'You approve the exact amount with a code or your linked wallet. Nothing moves before you approve.'
+                ? 'Paid from your own OpenSignet wallet, only to OpenSignet and only this exact amount.'
                 : 'Your wallet shows the exact USDC amount first. Nothing is charged until you approve it.'}
           </p>
         </div>
@@ -586,48 +636,6 @@ function Checkout({
           .
         </p>
       </section>
-
-      {approval && wallet?.approvers ? (
-        <VaultApprovalDialog
-          title={`Approve ${formatCheckoutAmount(BigInt(approval.dueAtomic))}`}
-          emailDescription="Approve this payment with a code sent to your email."
-          walletDescription="Approve this payment by signing with your linked wallet."
-          approvers={wallet.approvers}
-          start={(factor) =>
-            createAccountClient().startWalletPayment(factor, {
-              to: approval.authorization.to,
-              value: approval.authorization.value,
-              validBefore: approval.authorization.validBefore,
-              nonce: approval.authorization.nonce,
-              summary: approval.summary,
-            })
-          }
-          onApproved={async (challenge) => {
-            const signature = await createAccountClient().signWalletPayment(challenge.challengeId);
-            setPhase('redirecting');
-            await payWalletCheckout(approval.checkoutId, signature);
-            setApproval(null);
-            router.push(`/checkout/complete?checkout=${encodeURIComponent(approval.checkoutId)}`);
-          }}
-          onClose={() => {
-            setApproval(null);
-            setPhase('idle');
-          }}
-        >
-          <ApprovalSummary
-            icon={Wallet}
-            title={approval.summary}
-            subtitle="One payment"
-            amount={formatCheckoutAmount(BigInt(approval.dueAtomic))}
-            rows={[
-              { label: 'From', value: 'Your OpenSignet wallet' },
-              { label: 'To', value: 'OpenSignet' },
-              { label: 'Paid in', value: 'USDC on Base' },
-            ]}
-            note="This approval pays this exact amount once, to OpenSignet only."
-          />
-        </VaultApprovalDialog>
-      ) : null}
     </div>
   );
 }

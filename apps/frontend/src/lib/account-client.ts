@@ -19,13 +19,7 @@ import {
 import { emailChallengeSchema, signInErrorCodes, type EmailChallenge } from './sign-in-contract';
 import { signInErrorMessage, type SignInFailure } from './sign-in-client';
 import { API_TIMEOUT_MS } from './transport-policy';
-import {
-  cancellationsSchema,
-  signedRenewalsSchema,
-  type Cancellations,
-  type MandateTerms,
-  type SignedRenewals,
-} from './auto-renew';
+import type { RenewalItem } from './auto-renew';
 
 export type AccountFailure = SignInFailure | AccountErrorCode;
 
@@ -80,7 +74,7 @@ export function accountErrorMessage(
     case 'avatar_limit':
       return 'You’ve changed your photo twice this month. You can change it again next month.';
     case 'invalid_image':
-      return 'Use a PNG, JPG or WebP image up to 5 MB.';
+      return 'Use a PNG, JPG or WebP image up to 2 MB.';
     case 'wallet_not_empty':
       return 'Move the funds out of your OpenSignet wallet before deleting your account.';
     case 'wrong_signature':
@@ -125,18 +119,18 @@ export interface AccountClient {
   /** Single-use token for the wallet window's export. */
   walletExportToken(): Promise<string>;
   /** Asks for an approval to pay OpenSignet from the wallet (the exact checkout authorization). */
-  startWalletPayment(
-    factor: 'email' | 'wallet',
-    payment: { to: string; value: string; validBefore: string; nonce: string; summary: string },
-  ): Promise<VaultChallenge>;
-  /** The vault's signature for an approved payment. */
-  signWalletPayment(challengeId: string): Promise<string>;
-  /** Asks for an approval to turn automatic renewal on (the exact renewals in `terms`). */
-  startMandate(factor: 'email' | 'wallet', mandate: MandateTerms): Promise<VaultChallenge>;
-  /** The pre-signed renewals for an approved mandate. */
-  signMandate(challengeId: string): Promise<SignedRenewals>;
-  /** Signs cancellations of unused renewal payments (turning automatic renewal off). */
-  cancelAuthorizations(nonces: string[]): Promise<Cancellations>;
+  /**
+   * Pays OpenSignet from the OpenSignet wallet for a purchase (no code; the vault only pays
+   * OpenSignet). `renews` also lets the item renew automatically. Returns the signature.
+   */
+  payFromWallet(payment: {
+    to: string;
+    value: string;
+    validBefore: string;
+    nonce: string;
+    summary: string;
+    renews?: RenewalItem | null;
+  }): Promise<string>;
   deleteAccount(): Promise<void>;
   signOut(): Promise<void>;
 }
@@ -239,28 +233,8 @@ export function createAccountClient(fetcher: typeof fetch = fetch): AccountClien
       (await call('wallet/approvers', 'POST', walletViewSchema, { challengeId })).wallet,
     walletExportToken: async () =>
       (await call('wallet/export/start', 'POST', walletTokenSchema, {})).token,
-    startWalletPayment: (factor, payment) =>
-      call('wallet/payments/start', 'POST', vaultChallengeSchema, { factor, payment }),
-    startMandate: (factor, mandate) =>
-      call('wallet/mandates/start', 'POST', vaultChallengeSchema, { factor, mandate }),
-    signMandate: (challengeId) =>
-      call(
-        `wallet/mandates/${encodeURIComponent(challengeId)}/sign`,
-        'POST',
-        signedRenewalsSchema,
-        {},
-      ),
-    cancelAuthorizations: (nonces) =>
-      call('wallet/authorizations/cancel', 'POST', cancellationsSchema, { nonces }),
-    signWalletPayment: async (challengeId) =>
-      (
-        await call(
-          `wallet/payments/${encodeURIComponent(challengeId)}/sign`,
-          'POST',
-          paymentSignatureSchema,
-          {},
-        )
-      ).signature,
+    payFromWallet: async (payment) =>
+      (await call('wallet/payments', 'POST', paymentSignatureSchema, { payment })).signature,
     deleteAccount: () => call('account', 'DELETE', empty).then(() => undefined),
     signOut: () => call('auth/session', 'DELETE', empty).then(() => undefined),
   };

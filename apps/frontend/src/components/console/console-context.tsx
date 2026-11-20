@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { toast } from 'sonner';
 import { useAccountSession } from '@/hooks/use-account-session';
 import { createAccountClient } from '@/lib/account-client';
 import type { AccountSettings } from '@/lib/account-contract';
@@ -27,6 +28,8 @@ export interface ConsoleIdentity {
   framework: string | null;
   createdAt: string;
   expiresAt: string | null;
+  /** Pinned to the top of the lists. */
+  pinned: boolean;
 }
 
 export type IdentitiesState =
@@ -45,6 +48,8 @@ interface ConsoleValue {
   identities: IdentitiesState;
   /** Loads the account and its identities again. */
   refresh: () => void;
+  /** Saves a new order (and pins) for the identities; shown at once, undone if it can't be saved. */
+  arrange: (items: ConsoleIdentity[]) => void;
 }
 
 const ConsoleContext = createContext<ConsoleValue | null>(null);
@@ -126,7 +131,13 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
         const items = (await response.json()) as unknown;
         if (!Array.isArray(items)) throw new Error('identities unavailable');
         if (!controller.signal.aborted) {
-          setIdentities({ status: 'ready', items: items as ConsoleIdentity[] });
+          setIdentities({
+            status: 'ready',
+            items: (items as ConsoleIdentity[]).map((item) => ({
+              ...item,
+              pinned: item.pinned === true,
+            })),
+          });
         }
       })
       .catch(() => {
@@ -138,19 +149,52 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
     return () => controller.abort();
   }, [wallet, revision]);
 
-  const state: ConsoleState =
-    session.status === 'loading'
-      ? { status: 'loading' }
-      : session.status === 'signed-out'
-        ? { status: 'signed-out' }
-        : account === 'loading'
-          ? { status: 'loading' }
-          : account === 'wallet-pending'
-            ? { status: 'wallet-pending' }
-            : account === 'error'
-              ? { status: 'unavailable' }
-              : { status: 'ready', account };
+  const state = useMemo<ConsoleState>(
+    () =>
+      session.status === 'loading'
+        ? { status: 'loading' }
+        : session.status === 'signed-out'
+          ? { status: 'signed-out' }
+          : account === 'loading'
+            ? { status: 'loading' }
+            : account === 'wallet-pending'
+              ? { status: 'wallet-pending' }
+              : account === 'error'
+                ? { status: 'unavailable' }
+                : { status: 'ready', account },
+    [session.status, account],
+  );
 
-  const value = useMemo(() => ({ state, identities, refresh }), [state, identities, refresh]);
+  const arrange = useCallback((items: ConsoleIdentity[]) => {
+    let previous: IdentitiesState | null = null;
+    setIdentities((current) => {
+      previous = current;
+      return { status: 'ready', items };
+    });
+    fetch('/api/v1/agents/arrangement', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order: items.map((item) => item.id),
+        pinned: items.filter((item) => item.pinned).map((item) => item.id),
+      }),
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error('not saved');
+      })
+      .catch(() => {
+        if (previous) setIdentities(previous);
+        toast.error('Couldn’t save the order', {
+          description: 'Your identities are back as they were. Try again in a moment.',
+        });
+      });
+  }, []);
+
+  const value = useMemo(
+    () => ({ state, identities, refresh, arrange }),
+    [state, identities, refresh, arrange],
+  );
   return <ConsoleContext.Provider value={value}>{children}</ConsoleContext.Provider>;
 }

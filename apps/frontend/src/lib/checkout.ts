@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { ENTERPRISE_PLAN_OFFERS, SERVICE_PLAN_CATALOG } from '@opensignet/shared';
 import type { ServicePlanSku } from '@opensignet/shared';
+import { renewalItemSchema } from '@/lib/auto-renew';
 
 /**
  * Plan checkout for the whole account: card through Stripe Checkout, USDC on Base from any wallet
- * (x402), or USDC from the account's own OpenSignet wallet (approved with the wallet vault).
+ * (x402), or USDC from the account's own OpenSignet wallet (signed by the wallet vault).
  *
  * Security rules this module enforces on the client:
  * - Only known plans and billing periods are accepted from the address bar; anything else is
@@ -26,6 +27,8 @@ export interface CheckoutSelection {
   /** `plus`, `pro`, `max` or `enterprise-<monthly emails>`. */
   sku: ServicePlanSku;
   period: BillingPeriod;
+  /** Whether the plan also renews automatically (default on). Not part of the page's URL. */
+  autoRenew?: boolean;
 }
 
 export const BILLING_PERIODS: readonly BillingPeriod[] = ['monthly', 'yearly'];
@@ -219,6 +222,7 @@ function requestBody(selection: CheckoutSelection, method: CheckoutMethod) {
     planSku: selection.sku,
     period: selection.period,
     method,
+    autoRenew: selection.autoRenew ?? true,
   });
 }
 
@@ -309,13 +313,16 @@ const walletStartSchema = z.object({
   summary: z.string().min(1).max(120),
   dueAtomic: z.string().regex(/^\d{1,30}$/),
   expiresAt: z.string().datetime({ offset: true }),
+  /** Present when the plan also renews automatically: paying lets it renew from the wallet. */
+  renews: renewalItemSchema.nullable(),
 });
 
 export type WalletCheckout = z.infer<typeof walletStartSchema>;
 
 /**
  * Pays from the account's OpenSignet wallet. The server issues the exact authorization (amount,
- * payee, window and nonce); the person approves it with the wallet vault, which signs it.
+ * payee, window and nonce); the wallet vault signs it for the signed-in owner (no code: a payment
+ * to OpenSignet while signed in, owner decision).
  */
 export async function startWalletCheckout(
   selection: CheckoutSelection,

@@ -12,10 +12,12 @@ import {
   AccountPlanError,
   cancelScheduledChange,
   fetchAccountPlan,
+  fetchPlanUsage,
   planName,
   type AccountPlan,
+  type PlanUsage,
 } from '@/lib/account-plan';
-import { formatDate } from '@/lib/utils';
+import { cn, formatDate } from '@/lib/utils';
 
 /**
  * The account's plan on the dashboard, with the way to upgrade or change it. Plans cover the whole
@@ -25,6 +27,17 @@ export function PlanSummary({ sample }: { sample?: AccountPlan | null }) {
   const [plan, setPlan] = useState<AccountPlan | null>(sample ?? null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>(sample ? 'ready' : 'loading');
   const [attempt, setAttempt] = useState(0);
+  const [usage, setUsage] = useState<PlanUsage | null>(null);
+
+  // Usage is a bonus on top of the limits: if it can't load, the limits still show.
+  useEffect(() => {
+    if (sample) return;
+    const controller = new AbortController();
+    fetchPlanUsage(controller.signal)
+      .then(setUsage)
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [sample, attempt, plan?.sku]);
 
   useEffect(() => {
     if (sample) return;
@@ -68,6 +81,12 @@ export function PlanSummary({ sample }: { sample?: AccountPlan | null }) {
       ? (ENTERPRISE_PLAN_OFFERS.find((offer) => offer.sku === plan.sku)?.monthlyEmails ??
         SERVICE_PLAN_CATALOG.enterprise.limits.monthlyEmails)
       : (limits?.monthlyEmails ?? 0)
+    : 0;
+  const identities = plan
+    ? plan.plan === 'enterprise'
+      ? (ENTERPRISE_PLAN_OFFERS.find((offer) => offer.sku === plan.sku)?.identities ??
+        SERVICE_PLAN_CATALOG.enterprise.limits.identities)
+      : (limits?.identities ?? 0)
     : 0;
 
   return (
@@ -157,25 +176,150 @@ export function PlanSummary({ sample }: { sample?: AccountPlan | null }) {
         )}
       </div>
       {plan && limits && state === 'ready' ? (
-        <dl className="grid grid-cols-2 gap-px border-t border-border/60 bg-border/60 lg:grid-cols-4">
-          {(
-            [
-              ['Email a month', emails.toLocaleString('en-US')],
-              ['API keys', String(limits.apiKeys)],
-              ['DNS records', String(limits.dnsRecords)],
-              ['Email aliases', limits.emailAliases ? String(limits.emailAliases) : 'None'],
-            ] as const
-          ).map(([label, value]) => (
-            <div key={label} className="bg-[hsl(var(--console-surface))] px-5 py-3.5 sm:px-6">
-              <dt className="text-[12px] font-medium text-muted-foreground">{label}</dt>
-              <dd className="mt-0.5 text-[16px] font-semibold tabular-nums">{value}</dd>
-            </div>
-          ))}
-        </dl>
+        <div className="grid border-t border-border/60 lg:grid-cols-[2fr_3fr]">
+          <LimitGroup
+            title="Your account"
+            items={[
+              {
+                label: 'Identities',
+                limit: identities,
+                used: usage?.identities.used ?? null,
+              },
+              {
+                label: 'Email a month',
+                limit: emails,
+                used: usage?.monthlyEmails.used ?? null,
+                note: 'Shared by every identity',
+              },
+            ]}
+          />
+          <LimitGroup
+            title="Each identity"
+            className="border-t border-border/60 lg:border-l lg:border-t-0"
+            items={[
+              {
+                label: 'Email aliases',
+                limit: limits.emailAliases,
+                highest: usage?.emailAliases.highest ?? null,
+                note: 'Extra addresses for the inbox',
+              },
+              { label: 'API keys', limit: limits.apiKeys, highest: usage?.apiKeys.highest ?? null },
+              {
+                label: 'DNS records',
+                limit: limits.dnsRecords,
+                highest: usage?.dnsRecords.highest ?? null,
+              },
+            ]}
+          />
+        </div>
       ) : null}
       {plan && state === 'ready' && !sample ? (
         <AutoRenewControl plan={plan} onChange={setPlan} />
       ) : null}
     </section>
+  );
+}
+
+type LimitItem = {
+  label: string;
+  limit: number;
+  /** Used across the account; null when not counted. */
+  used?: number | null;
+  /** The fullest identity, for limits that apply to each identity. */
+  highest?: number | null;
+  note?: string;
+};
+
+/**
+ * One group of plan limits: a small heading over evenly spaced figures. Account limits show what
+ * is used and left with a meter; per-identity limits show the fullest identity.
+ */
+function LimitGroup({
+  title,
+  items,
+  className,
+}: {
+  title: string;
+  items: ReadonlyArray<LimitItem>;
+  className?: string;
+}) {
+  return (
+    <section aria-label={title} className={cn('px-5 py-4 sm:px-6', className)}>
+      <h3 className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/90">
+        {title}
+      </h3>
+      <dl
+        className="mt-2.5 grid gap-x-6 gap-y-3"
+        style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+      >
+        {items.map((item) => (
+          <LimitFigure key={item.label} item={item} />
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function LimitFigure({ item }: { item: LimitItem }) {
+  const figure = (value: number) => value.toLocaleString('en-US');
+  const counted = typeof item.used === 'number';
+  const share = counted && item.limit > 0 ? Math.min(1, (item.used ?? 0) / item.limit) : 0;
+  const full = counted && (item.used ?? 0) >= item.limit;
+  const near = counted && !full && share >= 0.8;
+  const left = counted ? Math.max(0, item.limit - (item.used ?? 0)) : 0;
+  return (
+    <div className="min-w-0">
+      <dt className="truncate text-[12px] text-muted-foreground">{item.label}</dt>
+      <dd className="mt-0.5 min-w-0">
+        {counted ? (
+          <>
+            <span className="text-[17px] font-semibold tabular-nums">{figure(item.used ?? 0)}</span>
+            <span className="text-[13px] tabular-nums text-muted-foreground">
+              {' '}
+              of {figure(item.limit)}
+            </span>
+            <div
+              className="mt-1.5 h-1 overflow-hidden rounded-full bg-foreground/[0.07]"
+              role="meter"
+              aria-label={`${item.label} used`}
+              aria-valuemin={0}
+              aria-valuemax={item.limit}
+              aria-valuenow={item.used ?? 0}
+            >
+              <div
+                className={cn(
+                  'h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none',
+                  full
+                    ? 'bg-[hsl(4_65%_48%)]'
+                    : near
+                      ? 'bg-[hsl(32_85%_48%)]'
+                      : 'bg-[hsl(143_38%_36%)]',
+                )}
+                style={{ width: `${Math.max(item.used ? 3 : 0, share * 100)}%` }}
+              />
+            </div>
+            <div
+              className={cn(
+                'mt-1 truncate text-[11.5px]',
+                full ? 'font-medium text-[hsl(4_60%_42%)]' : 'text-muted-foreground',
+              )}
+            >
+              {full ? 'All in use' : `${figure(left)} left`}
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="text-[17px] font-semibold tabular-nums">{figure(item.limit)}</span>
+            {typeof item.highest === 'number' ? (
+              <div className="mt-1 truncate text-[11.5px] text-muted-foreground">
+                Fullest uses {figure(item.highest)}
+              </div>
+            ) : item.note ? (
+              <div className="mt-1 truncate text-[11.5px] text-muted-foreground">{item.note}</div>
+            ) : null}
+          </>
+        )}
+      </dd>
+    </div>
   );
 }

@@ -25,16 +25,31 @@ export function PageTabs({ tabs, label }: { tabs: readonly PageTab[]; label: str
     .filter((tab) => pathname === tab.href || pathname.startsWith(`${tab.href}/`))
     .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 
+  // The current tab sits in the middle of the bar, clear of the edge shadows, and stays there
+  // when the bar changes width.
   useEffect(() => {
-    const active = list.current?.querySelector<HTMLElement>('[aria-current="page"]');
-    active?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const bar = list.current;
+    if (!bar) return;
+    const center = () => {
+      const active = bar.querySelector<HTMLElement>('[aria-current="page"]');
+      if (!active || bar.scrollWidth <= bar.clientWidth) return;
+      const item = active.parentElement ?? active;
+      bar.scrollTo({
+        left: item.offsetLeft - (bar.clientWidth - item.offsetWidth) / 2,
+        behavior: 'instant',
+      });
+    };
+    center();
+    const observer = new ResizeObserver(center);
+    observer.observe(bar);
+    return () => observer.disconnect();
   }, [current]);
 
   return (
     <nav aria-label={label} className="relative -mx-4 mb-8 border-b border-border/80 sm:mx-0">
       <ul
         ref={list}
-        className="flex gap-1 overflow-x-auto scroll-smooth px-4 [scrollbar-width:none] sm:px-0 [&::-webkit-scrollbar]:hidden"
+        className="relative flex gap-1 overflow-x-auto scroll-smooth px-4 [scrollbar-width:none] sm:px-0 [&::-webkit-scrollbar]:hidden"
       >
         {tabs.map(({ href, label: text, icon: Icon }) => {
           const active = href === current;

@@ -105,6 +105,7 @@ test('card checkout sends the plan, never a price, with an idempotency key', asy
     planSku: 'pro',
     period: 'yearly',
     method: 'card',
+    autoRenew: true,
   });
 });
 

@@ -117,8 +117,8 @@ export function IdentityShell({
   return (
     <IdentityContext.Provider value={{ view, reload: () => setRevision((value) => value + 1) }}>
       <Breadcrumb domain={agent.domain} />
-      <header className="mb-6 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
+      <header className="relative mb-6 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-center gap-4 pr-11 sm:pr-0">
           <IdentityTile domain={agent.domain} size="lg" />
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -146,10 +146,11 @@ export function IdentityShell({
           href={`https://${agent.domain}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 self-start rounded-lg border border-border/90 bg-card px-3 text-[13.5px] font-medium shadow-[0_1px_2px_hsl(90_5%_12%/0.06)] transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          title={`Visit ${agent.domain}`}
+          className="absolute right-0 top-0 inline-flex h-9 w-9 shrink-0 items-center justify-center gap-1.5 self-start rounded-lg border border-border/90 bg-card text-[13.5px] font-medium shadow-[0_1px_2px_hsl(90_5%_12%/0.06)] transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 sm:static sm:w-auto sm:px-3"
         >
-          Visit domain
-          <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
+          <span className="sr-only sm:not-sr-only">Visit domain</span>
+          <ArrowUpRight className="h-4 w-4 sm:h-3.5 sm:w-3.5" strokeWidth={1.75} aria-hidden />
         </a>
       </header>
       <PageTabs tabs={tabs} label={`${agent.domain} sections`} />

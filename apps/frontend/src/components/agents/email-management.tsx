@@ -705,7 +705,7 @@ export function EmailManagement({
             </div>
             <div className="text-xs text-muted-foreground">
               {aliasLimit === 0
-                ? 'Aliases come with the Plus, Pro, Max and Enterprise plans.'
+                ? 'Aliases aren’t available yet for this identity.'
                 : aliasSlotsLeft > 0
                   ? `${aliasSlotsLeft} alias slot${aliasSlotsLeft === 1 ? '' : 's'} available.`
                   : 'Alias limit reached for this plan.'}

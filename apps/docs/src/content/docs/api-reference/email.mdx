@@ -44,15 +44,18 @@ previous one is unresolved. `pending`, `fenced`, `applying`, `native_applied`, a
 not completion. `uncertain` and `rejected` require review; `cancelled` is not a successful change.
 Only `completed` confirms the new routing. Readiness is reported separately by `mailStatus`.
 
-| Plan              | Emails a month (sent + received) | API keys | Active aliases |
-| ----------------- | -------------------------------: | -------: | -------------: |
-| Free (`included`) |                            3,000 |        1 |              0 |
-| Plus              |                           25,000 |        5 |              5 |
-| Pro               |                           50,000 |       10 |             10 |
-| Max               |                          100,000 |       20 |             15 |
-| Enterprise        |          150,000 up to 5,000,000 |       25 |             20 |
+| Plan              |   Identities | Emails a month (sent + received) | API keys | Active aliases |
+| ----------------- | -----------: | -------------------------------: | -------: | -------------: |
+| Free (`included`) |            3 |                            3,000 |        1 |              1 |
+| Plus              |           10 |                           25,000 |        5 |              5 |
+| Pro               |           25 |                           50,000 |       10 |             10 |
+| Max               |           60 |                          100,000 |       20 |             15 |
+| Enterprise        | 150 to 2,500 |          150,000 up to 5,000,000 |       25 |             20 |
 
-Plans apply to the whole account, and each identity in the account gets these limits. Plans are
+Plans apply to the whole account. The number of identities and the monthly email volume are for
+the whole account, shared by all of its identities. API keys and aliases are for each identity:
+every identity can hold that many. Enterprise includes more identities at higher volumes, from 150
+to 2,500. Plans are
 bought and changed from the dashboard or the [pricing page](https://opensignet.com/pricing), by card
 through Stripe or in USDC on Base. Current prices are on the pricing page.
 

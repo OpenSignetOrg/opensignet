@@ -41,11 +41,13 @@ export const SERVICE_PLAN_CATALOG = {
     monthlyPriceUsdcAtomic: 0n,
     yearlyPriceUsdcAtomic: 0n,
     limits: {
+      /** Identities (domains) the account can hold. */
+      identities: 3,
       monthlyEmails: 3_000,
       requestsPerSecond: EMAIL_REQUESTS_PER_SECOND,
       apiKeys: 1,
       dnsRecords: 20,
-      emailAliases: 0,
+      emailAliases: 1,
       emailRetentionDays: EMAIL_RETENTION_DAYS,
     },
     supportTier: 'standard',
@@ -56,6 +58,8 @@ export const SERVICE_PLAN_CATALOG = {
     monthlyPriceUsdcAtomic: 4_900_000n,
     yearlyPriceUsdcAtomic: 58_000_000n,
     limits: {
+      /** Identities (domains) the account can hold. */
+      identities: 10,
       monthlyEmails: 25_000,
       requestsPerSecond: EMAIL_REQUESTS_PER_SECOND,
       apiKeys: 5,
@@ -71,6 +75,8 @@ export const SERVICE_PLAN_CATALOG = {
     monthlyPriceUsdcAtomic: 10_000_000n,
     yearlyPriceUsdcAtomic: 120_000_000n,
     limits: {
+      /** Identities (domains) the account can hold. */
+      identities: 25,
       monthlyEmails: 50_000,
       requestsPerSecond: EMAIL_REQUESTS_PER_SECOND,
       apiKeys: 10,
@@ -86,6 +92,8 @@ export const SERVICE_PLAN_CATALOG = {
     monthlyPriceUsdcAtomic: 20_000_000n,
     yearlyPriceUsdcAtomic: 240_000_000n,
     limits: {
+      /** Identities (domains) the account can hold. */
+      identities: 60,
       monthlyEmails: 100_000,
       requestsPerSecond: EMAIL_REQUESTS_PER_SECOND,
       apiKeys: 20,
@@ -101,6 +109,8 @@ export const SERVICE_PLAN_CATALOG = {
     monthlyPriceUsdcAtomic: 30_000_000n,
     yearlyPriceUsdcAtomic: 360_000_000n,
     limits: {
+      /** Identities (domains) the account can hold. */
+      identities: 150,
       monthlyEmails: 150_000,
       requestsPerSecond: EMAIL_REQUESTS_PER_SECOND,
       apiKeys: 25,
@@ -112,9 +122,19 @@ export const SERVICE_PLAN_CATALOG = {
   },
 } as const;
 
-export const ENTERPRISE_PLAN_OFFERS = ENTERPRISE_EMAIL_TIERS.map((monthlyEmails) => ({
+/**
+ * Identities included at each Enterprise volume, in the order of ENTERPRISE_EMAIL_TIERS. They grow
+ * more slowly as volume grows, from 150 to at most 2,500.
+ */
+export const ENTERPRISE_IDENTITIES = [
+  150, 180, 240, 300, 350, 400, 450, 500, 550, 600, 850, 1_100, 1_350, 1_600, 1_850, 2_100, 2_300,
+  2_500,
+] as const;
+
+export const ENTERPRISE_PLAN_OFFERS = ENTERPRISE_EMAIL_TIERS.map((monthlyEmails, index) => ({
   sku: `enterprise-${monthlyEmails}` as const,
   monthlyEmails,
+  identities: ENTERPRISE_IDENTITIES[index] ?? 2_500,
   monthlyPriceUsdcAtomic: BigInt(monthlyEmails / 50_000) * 10_000_000n,
   yearlyPriceUsdcAtomic: BigInt(monthlyEmails / 50_000) * 120_000_000n,
 }));

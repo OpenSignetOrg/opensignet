@@ -7,6 +7,8 @@ import { SelectMenu } from '@/components/ui/select-menu';
 type EnterprisePlanOption = {
   sku: string;
   monthlyEmails: number;
+  /** Identities the account can hold at this volume. */
+  identities: number;
   /** Formatted per-month price, e.g. "$20". */
   monthly: string;
   /** Formatted yearly charge, e.g. "$240". */
@@ -47,6 +49,9 @@ export function EnterprisePlanSelector({
         yearly={enterprise.yearly}
         className="mt-3 font-mono text-xl font-bold"
       />
+      <p className="mt-3 text-sm font-medium">
+        {enterprise.identities.toLocaleString('en-US')} identities
+      </p>
       {children}
       <PlanCta plan={enterprise.sku} label="Get now" />
     </div>

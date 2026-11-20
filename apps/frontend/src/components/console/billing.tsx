@@ -1,12 +1,22 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, CreditCard, Wallet, Zap } from 'lucide-react';
 import { PlanSummary } from '@/components/dashboard/plan-summary';
+import { listCards } from '@/lib/cards';
 import { PageHeader } from './identity-bits';
+import { RenewalsCard } from './renewals-card';
 
-/** Billing: the account's plan (its limits and automatic renewal) and how payment works. */
+/** Billing: the account's plan (its limits and automatic renewal), each identity's renewal, and how payment works. */
 export function ConsoleBilling() {
+  // Whether card payments are open; until known, the card is described without a promise.
+  const [cardOpen, setCardOpen] = useState<boolean | null>(null);
+  useEffect(() => {
+    listCards()
+      .then((cards) => setCardOpen(cards.available))
+      .catch(() => setCardOpen(null));
+  }, []);
   return (
     <>
       <PageHeader
@@ -25,6 +35,8 @@ export function ConsoleBilling() {
 
       <PlanSummary />
 
+      <RenewalsCard />
+
       <section aria-labelledby="billing-methods">
         <h2 id="billing-methods" className="mb-3 text-[17px] font-semibold tracking-[-0.01em]">
           How you pay
@@ -34,7 +46,7 @@ export function ConsoleBilling() {
             {
               icon: Wallet,
               title: 'OpenSignet wallet',
-              body: 'USDC on Base from your own wallet, approved with a code. It can renew your plan automatically.',
+              body: 'USDC on Base from your account’s own wallet. Your plan and domains can renew from it automatically.',
             },
             {
               icon: Zap,
@@ -44,7 +56,10 @@ export function ConsoleBilling() {
             {
               icon: CreditCard,
               title: 'Card',
-              body: 'Card payments open soon. Plans paid by card will renew on the card automatically.',
+              body:
+                cardOpen === false
+                  ? 'Card payments open soon. Plans paid by card will renew on the card automatically.'
+                  : 'Visa, Mastercard and more on Stripe’s secure page. Saved cards are in your wallet settings, and your plan and domains can renew on them.',
             },
           ].map(({ icon: Icon, title, body }) => (
             <li key={title} className="console-card px-5 py-4">

@@ -61,12 +61,15 @@ const sections: readonly LegalSection[] = [
             </>,
             <>
               <strong>Services you use.</strong> Domains and onchain names, registration contact
-              details, DNS records, mailbox messages and their metadata, API key labels and usage.
+              details, DNS records, mailbox messages and their metadata, API key labels and usage,
+              and each identity’s sender name and logo. A logo is public by design: it is published
+              with the domain so inboxes can show it to the people the identity writes to.
             </>,
             <>
               <strong>Payments.</strong> Plan, amount, status and, for crypto payments, the
               transaction on Base. Card details go directly to our payment processor; we never see
-              the full card number.
+              the full card number. For a saved card we keep only its brand, last four digits and
+              expiry.
             </>,
             <>
               <strong>Support.</strong> What you send us when you contact us.

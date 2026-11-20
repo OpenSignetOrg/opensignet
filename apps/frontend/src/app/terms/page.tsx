@@ -62,14 +62,18 @@ const sections: readonly LegalSection[] = [
       <>
         <p>
           Every account includes a wallet on Base, created with the account. Its private key is
-          created and kept encrypted in our isolated wallet vault, which uses it only for actions
-          you approve with a code sent to your email or a signature from your linked wallet.
+          created and kept encrypted in our isolated wallet vault. While you are signed in, the
+          vault uses it to pay OpenSignet for what you buy and for the renewals you turn on, with no
+          code. Anything else (sending funds elsewhere, exporting the key, changing who approves)
+          needs a code sent to your email or a signature from your linked wallet.
         </p>
         <LegalList
           items={[
             <>
-              <strong>Nothing moves without your approval.</strong> We cannot view your private key
-              or move your funds on our own, and our staff have no access to either.
+              <strong>Only you decide what it pays.</strong> The vault pays only OpenSignet, only
+              for a purchase you make or a renewal you keep on, and never more than that item may
+              cost. We cannot view your private key or move your funds anywhere else, and our staff
+              have no access to either.
             </>,
             <>
               <strong>Keep your approvals safe.</strong> Keep access to your account email and your
@@ -146,25 +150,28 @@ const sections: readonly LegalSection[] = [
     body: (
       <>
         <p>
-          Domains, names and plans run for the period you pay for. When you turn on automatic
-          renewal, you authorize OpenSignet to collect the renewal price from the payment source you
-          set up, within the limits you approved, shortly before the end of each period. You can
-          turn it off at any time.
+          Domains, names and plans run for the period you pay for. Automatic renewal is on by
+          default when you buy, and you can turn it off or on again at any time. While it is on, you
+          authorize OpenSignet to collect the renewal price from the payment method you chose (your
+          OpenSignet wallet or your saved card) shortly before the end of each period. A change of
+          payment method applies from the next renewal.
         </p>
         <LegalList
           items={[
             <>
-              <strong>Plans paid by card</strong> renew on that card through Stripe.
+              <strong>Plans paid by card</strong> renew on your default card through Stripe.
             </>,
             <>
-              <strong>Plans paid in USDC</strong> renew from your OpenSignet wallet only if you turn
-              automatic renewal on. You approve a set number of exact payments, each usable only in
-              the few days around its renewal date. Turning it off cancels every unused payment.
+              <strong>Plans paid in USDC</strong> renew from your OpenSignet wallet. Each renewal is
+              signed only when it falls due, in the few days around its renewal date, and never for
+              more than a year of the plan. Turning automatic renewal off stops it.
             </>,
             <>
-              <strong>Domains</strong> renew yearly from your OpenSignet wallet if you turn
-              automatic renewal on for the domain, at the registrar’s renewal price. Each approved
-              payment can only be taken from 30 days to 7 days before the domain expires.
+              <strong>Domains</strong> renew yearly at the registrar’s renewal price, from your
+              OpenSignet wallet or your saved card, as chosen for each domain. A renewal is taken
+              from 30 days to 7 days before the domain expires. From the wallet it is never more
+              than a quarter above the price when you turned it on; if the price rises further, we
+              ask you first.
             </>,
             <>
               <strong>Reminders.</strong> We email you 14, 7 and 1 day before a USDC plan renewal,

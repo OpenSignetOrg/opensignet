@@ -10,7 +10,7 @@ import { breadcrumbJsonLd, createPageMetadata } from '@/lib/seo';
 export const metadata: Metadata = createPageMetadata({
   title: 'Pricing',
   description:
-    'Every OpenSignet identity includes a professional inbox with 3,000 emails a month. Plus, Pro, Max and Enterprise email plans add volume, API keys, DNS records and aliases for your whole account, billed monthly or yearly.',
+    'Every OpenSignet account includes 3 identities, each with a professional inbox, and 3,000 emails a month. Plus, Pro, Max and Enterprise plans add identities, volume, API keys, DNS records and aliases for your whole account, billed monthly or yearly.',
   path: '/pricing',
 });
 

@@ -25,6 +25,7 @@ import { AccountError } from '@/lib/account-client';
 import type { EmbeddedWallet, WalletApprover } from '@/lib/account-contract';
 import { openWalletWindow, WalletWindowError, type SignRequest } from '@/lib/wallet-window';
 import { formatUsd, shortAddress } from '@/lib/utils';
+import { PaymentMethodsCard } from './payment-methods';
 import { useSettings } from './settings-context';
 import { SettingsCard } from './settings-ui';
 
@@ -41,6 +42,7 @@ export function WalletTab() {
   return (
     <>
       <WalletCard address={wallet.address as Address} />
+      <PaymentMethodsCard />
       <ApproversCard wallet={wallet} />
       <ExportCard />
     </>
@@ -133,7 +135,7 @@ function WalletCard({ address }: { address: Address }) {
     <SettingsCard
       id="wallet"
       title="OpenSignet wallet"
-      description="Your account’s own wallet on Base. Nothing moves from it without your approval."
+      description="Your account’s own wallet on Base. It pays OpenSignet while you’re signed in; sending funds anywhere else needs your approval."
     >
       <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
         <div className="min-w-0">
@@ -215,7 +217,7 @@ function ApproversCard({ wallet }: { wallet: EmbeddedWallet }) {
     <SettingsCard
       id="approvals"
       title="Wallet approvals"
-      description="Payments, exports and other wallet actions need an approval from one of these."
+      description="Withdrawals, exporting the wallet and changing these approvers need an approval from one of these."
       footer={
         outdated && wallet.approvers ? (
           <>

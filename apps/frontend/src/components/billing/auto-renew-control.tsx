@@ -1,33 +1,29 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Loader2, RefreshCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { InlineNotice } from '@/components/ui/inline-notice';
-import { ApprovalSummary } from '@/components/wallet/approval-summary';
-import { VaultApprovalDialog } from '@/components/wallet/vault-approval-dialog';
-import { AccountError, createAccountClient } from '@/lib/account-client';
-import type { WalletApprover } from '@/lib/account-contract';
-import type { AccountPlan } from '@/lib/account-plan';
-import {
-  AutoRenewError,
-  autoRenewOffNonces,
-  autoRenewTerms,
-  turnAutoRenewOff,
-  turnAutoRenewOn,
-  type MandateTerms,
-} from '@/lib/auto-renew';
+import { Segmented } from '@/components/ui/segmented';
+import { Switch } from '@/components/ui/switch';
+import { cancelScheduledChange, renewFromWallet, type AccountPlan } from '@/lib/account-plan';
+import { checkoutPath } from '@/lib/checkout';
+import type { ServicePlanSku } from '@opensignet/shared';
+import { AutoRenewError, turnAutoRenewOff, turnAutoRenewOn } from '@/lib/auto-renew';
 
-function dollars(atomic: string): string {
-  const cents = Number(BigInt(atomic) / 10_000n);
-  return `$${(cents / 100).toFixed(2)}`;
+function longDate(iso: string | null): string | null {
+  return iso
+    ? new Date(iso).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null;
 }
 
 /**
- * Automatic renewal for plans paid in USDC: on, the plan renews from the OpenSignet wallet;
- * off, it ends at the period end unless renewed by hand. Card plans renew on the card.
+ * Automatic renewal of the plan, as a switch. Signed in, it needs no code (owner decision): on,
+ * the plan renews at the end of each period, from the OpenSignet wallet when paid in USDC or on
+ * the card when paid by card; off, it ends at the period end unless renewed by hand.
  */
 export function AutoRenewControl({
   plan,
@@ -36,51 +32,58 @@ export function AutoRenewControl({
   plan: AccountPlan;
   onChange: (plan: AccountPlan) => void;
 }) {
+  const labelId = useId();
+  const router = useRouter();
   const on = !plan.cancelAtPeriodEnd;
-  const [terms, setTerms] = useState<MandateTerms | null>(null);
-  const [approvers, setApprovers] = useState<WalletApprover[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmOff, setConfirmOff] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (plan.plan === 'included' || plan.paymentMethod === 'card' || !plan.paymentMethod) return null;
+  if (plan.plan === 'included' || !plan.paymentMethod) return null;
 
-  async function start() {
+  const renewsBy = plan.scheduled?.paymentMethod ?? plan.paymentMethod;
+  const date = longDate(plan.currentPeriodEnd);
+  const byCard = renewsBy === 'card';
+
+  /** How the next renewals are paid; it applies from the next renewal. */
+  async function choose(method: 'wallet' | 'card') {
+    if (method === 'card') {
+      // A card is collected on Stripe's page, billing only from the renewal date.
+      if (!plan.sku || !plan.period) return;
+      router.push(
+        `${checkoutPath({ sku: plan.sku as ServicePlanSku, period: plan.period })}&switch=card`,
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const [nextTerms, wallet] = await Promise.all([
-        autoRenewTerms(),
-        createAccountClient().wallet(),
-      ]);
-      if (!wallet?.approvers?.length) throw new AutoRenewError('unavailable');
-      setApprovers(wallet.approvers);
-      setTerms(nextTerms);
-    } catch (failure) {
-      setError(
-        failure instanceof AutoRenewError || failure instanceof AccountError
-          ? failure.message
-          : new AutoRenewError('unavailable').message,
+      // Paid in USDC with a move to card waiting: dropping that move is enough.
+      onChange(
+        await (plan.paymentMethod !== 'card' && plan.scheduled?.paymentMethod === 'card'
+          ? cancelScheduledChange()
+          : renewFromWallet(plan)),
       );
+      toast.success('Renews from your wallet', {
+        description: `From ${date ?? 'the next renewal'}, your plan renews from your OpenSignet wallet.`,
+      });
+    } catch {
+      setError('The payment method couldn’t be changed. Nothing changed; try again in a moment.');
     } finally {
       setBusy(false);
     }
   }
 
-  async function stop() {
+  async function change(next: boolean) {
     setBusy(true);
     setError(null);
     try {
-      const nonces = await autoRenewOffNonces();
-      const cancellations = nonces.length
-        ? await createAccountClient().cancelAuthorizations(nonces)
-        : null;
-      onChange(await turnAutoRenewOff(cancellations));
+      onChange(await (next ? turnAutoRenewOn() : turnAutoRenewOff()));
       setConfirmOff(false);
-      toast.success('Automatic renewal is off');
+      toast.success(next ? 'Automatic renewal is on' : 'Automatic renewal is off');
     } catch (failure) {
       setError(
-        failure instanceof AutoRenewError || failure instanceof AccountError
+        failure instanceof AutoRenewError
           ? failure.message
           : new AutoRenewError('unavailable').message,
       );
@@ -88,97 +91,78 @@ export function AutoRenewControl({
       setBusy(false);
     }
   }
+
+  const detail = on
+    ? byCard
+      ? `Renews${date ? ` on ${date}` : ''} on your card.`
+      : `Renews${date ? ` on ${date}` : ''} from your OpenSignet wallet. Keep enough USDC on Base in it; we remind you before.`
+    : `Your plan ends${date ? ` on ${date}` : ' at the end of this period'}. Turn this on to keep it without doing anything.`;
 
   return (
-    <div className="flex flex-col gap-3 border-t border-border/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-      <div className="min-w-0 text-sm">
-        <div className="flex items-center gap-2 font-medium">
-          <RefreshCcw
-            className="h-4 w-4 shrink-0 text-muted-foreground"
-            strokeWidth={1.75}
-            aria-hidden
-          />
-          Automatic renewal {on ? 'is on' : 'is off'}
+    <div className="border-t border-border/60 px-5 py-4 sm:px-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 text-sm">
+          <div id={labelId} className="flex items-center gap-2 font-medium">
+            <RefreshCcw
+              className="h-4 w-4 shrink-0 text-muted-foreground"
+              strokeWidth={1.75}
+              aria-hidden
+            />
+            Automatic renewal
+          </div>
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{detail}</p>
+          {error && !confirmOff ? <InlineNotice className="mt-2">{error}</InlineNotice> : null}
         </div>
-        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-          {on && !plan.autoRenewApproved
-            ? 'Your next renewal is for a different plan. Approve its amount so it renews automatically.'
-            : on
-              ? 'Renews from your OpenSignet wallet. Keep enough USDC on Base in it before each renewal.'
-              : 'Turn it on to renew from your OpenSignet wallet without doing anything each time.'}
-        </p>
-        {error ? <InlineNotice className="mt-2">{error}</InlineNotice> : null}
-      </div>
-      <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-        {on && !plan.autoRenewApproved ? (
-          <Button
-            type="button"
-            size="sm"
-            className="h-9 w-full rounded-lg sm:w-auto"
-            disabled={busy}
-            onClick={() => void start()}
-          >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-            Approve new amount
-          </Button>
-        ) : null}
-        <Button
-          type="button"
-          variant={on ? 'ghost' : 'outline'}
-          size="sm"
-          className="h-9 w-full rounded-lg sm:w-auto"
-          disabled={busy}
-          onClick={() => (on ? setConfirmOff(true) : void start())}
-        >
-          {busy && !(on && !plan.autoRenewApproved) ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+        <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          {busy && !confirmOff ? (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
           ) : null}
-          {on ? 'Turn off' : 'Turn on'}
-        </Button>
-      </div>
-
-      {terms && approvers ? (
-        <VaultApprovalDialog
-          title="Turn on automatic renewal"
-          emailDescription="Approve the renewals with a code sent to your email."
-          walletDescription="Approve the renewals by signing with your linked wallet."
-          approvers={approvers}
-          start={(factor) => createAccountClient().startMandate(factor, terms)}
-          onApproved={async (challenge) => {
-            const signed = await createAccountClient().signMandate(challenge.challengeId);
-            onChange(await turnAutoRenewOn(signed.renewals));
-            setTerms(null);
-            toast.success('Automatic renewal is on');
-          }}
-          onClose={() => setTerms(null)}
-        >
-          <ApprovalSummary
-            icon={RefreshCcw}
-            title={terms.summary}
-            subtitle={`Up to ${terms.count} renewals`}
-            amount={dollars(terms.value)}
-            amountNote={terms.periodSeconds >= 365 * 86_400 ? 'a year' : 'a month'}
-            rows={[
-              { label: 'From', value: 'Your OpenSignet wallet' },
-              { label: 'To', value: 'OpenSignet' },
-              { label: 'Paid in', value: 'USDC on Base' },
-            ]}
-            note="Each renewal can only be charged within a few days of its date. Turn it off at any time and every unused one is cancelled."
+          <Switch
+            checked={on}
+            disabled={busy}
+            aria-labelledby={labelId}
+            onCheckedChange={(next) => (next ? void change(true) : setConfirmOff(true))}
           />
-        </VaultApprovalDialog>
+        </div>
+      </div>
+      {on ? (
+        <div className="mt-3.5 flex flex-col gap-2 border-t border-dashed border-border/70 pt-3.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium">Pay renewals with</div>
+            <p className="mt-0.5 text-[12px] leading-5 text-muted-foreground">
+              A change applies from the next renewal.
+            </p>
+          </div>
+          <Segmented
+            label="Pay renewals with"
+            value={byCard ? 'card' : 'wallet'}
+            disabled={busy}
+            onChange={(method) => void choose(method)}
+            className="w-full sm:w-auto"
+            options={[
+              { value: 'wallet', label: 'OpenSignet wallet' },
+              {
+                value: 'card',
+                label: 'Card',
+                disabledReason:
+                  plan.cardAvailable || byCard ? undefined : 'Card payments open soon',
+              },
+            ]}
+          />
+        </div>
       ) : null}
 
       {confirmOff ? (
         <Dialog
           title="Turn off automatic renewal?"
-          description={`Your plan stays active until ${plan.currentPeriodEnd ? new Date(plan.currentPeriodEnd).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }) : 'the end of this period'}, then ends unless you renew it.`}
-          onClose={() => setConfirmOff(false)}
+          description={`Your plan stays active until ${date ?? 'the end of this period'}, then ends unless you renew it.`}
+          onClose={() => {
+            setConfirmOff(false);
+            setError(null);
+          }}
           busy={busy}
         >
-          <p className="text-sm leading-6 text-muted-foreground">
-            Every future renewal payment you approved is cancelled on chain, so none can be used.
-          </p>
-          {error ? <InlineNotice className="mt-3">{error}</InlineNotice> : null}
+          {error ? <InlineNotice>{error}</InlineNotice> : null}
           <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button
               type="button"
@@ -188,7 +172,7 @@ export function AutoRenewControl({
             >
               Keep it on
             </Button>
-            <Button type="button" onClick={() => void stop()} disabled={busy}>
+            <Button type="button" onClick={() => void change(false)} disabled={busy}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
               Turn off
             </Button>

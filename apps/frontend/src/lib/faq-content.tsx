@@ -35,8 +35,8 @@ export const HOME_FAQS: readonly FaqItem[] = [
     answer: (
       <>
         Domains are charged at the live registrar price, and every domain comes with the Free plan,
-        including a professional inbox. Plus, Pro, Max and Enterprise add more email, API keys and
-        aliases, billed monthly or yearly. See{' '}
+        including a professional inbox. Plus, Pro, Max and Enterprise add more identities, email,
+        API keys and aliases, billed monthly or yearly. See{' '}
         <a href="/pricing" className={link}>
           Pricing
         </a>
@@ -68,7 +68,7 @@ export const PRICING_FAQS: readonly FaqItem[] = [
   {
     question: 'What comes with the Free plan?',
     answer:
-      'Every domain includes it: a professional inbox with 3,000 emails a month (sent and received combined), 1 API key, 20 DNS records, 30-day message retention and an onchain AgentID. You pay only for the domain at its registrar price.',
+      'Every account starts on it: up to 3 identities and 3,000 emails a month (sent and received combined) shared between them. Each identity gets a professional inbox, 1 email alias, 1 API key, 20 DNS records, 30-day message retention and an onchain AgentID. You pay only for each domain at its registrar price.',
   },
   {
     question: 'How is the domain price set?',
@@ -78,7 +78,7 @@ export const PRICING_FAQS: readonly FaqItem[] = [
   {
     question: 'How do I pay?',
     answer:
-      'Plans are paid in USDC on Base, from your OpenSignet wallet or any other wallet. Card payments through Stripe are coming soon. Domain registration is paid in USDC on Base. Checkout always shows the exact total, and nothing is charged until you approve the payment.',
+      'Plans are paid in USDC on Base, from your OpenSignet wallet or any other wallet, or by card through Stripe once card payments open. Domain registration is paid in USDC on Base. Checkout always shows the exact total before you pay. Paying from your OpenSignet wallet while signed in needs no code; a payment from another wallet is approved in that wallet.',
   },
   {
     question: 'Are plans billed monthly or yearly?',
@@ -93,7 +93,7 @@ export const PRICING_FAQS: readonly FaqItem[] = [
   {
     question: 'How do renewals work?',
     answer:
-      'Plans paid by card renew on the card. Plans paid in USDC renew from your OpenSignet wallet when you turn on automatic renewal in your dashboard: you approve the exact payments once, and we remind you 14, 7 and 1 day before each one. Domains renew yearly from your OpenSignet wallet when you turn on automatic renewal on the domain’s page: each payment can only be taken from 30 to 7 days before the domain expires. If a renewal cannot be paid, the service can expire, so keep enough in your wallet.',
+      'Automatic renewal is a switch, on by default when you buy, and you can turn it off or on again at any time in Billing. Your plan renews on your card, or from your OpenSignet wallet if you paid in USDC; we remind you 14, 7 and 1 day before a wallet renewal. Each domain renews yearly from your wallet or your saved card, whichever you choose on its page, from 30 to 7 days before it expires. A change of payment method applies from the next renewal. If a renewal cannot be paid, the service can expire, so keep enough in your wallet or a valid card saved.',
   },
   {
     question: 'Are payments refundable?',

@@ -50,7 +50,7 @@ export function HeaderSignInButton({
     return (
       <Button
         asChild
-        variant={fullWidth ? 'secondary' : 'ghost'}
+        variant={fullWidth ? 'secondary' : 'outline'}
         size="sm"
         className={cn(width, className)}
       >

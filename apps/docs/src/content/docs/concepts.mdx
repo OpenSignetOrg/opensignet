@@ -9,9 +9,14 @@ You sign in to [opensignet.com](https://opensignet.com) with Google, an email co
 (EIP-4361). There is no separate sign-up, and each person has one account across these methods.
 A signed-in session belongs to the account, whichever method started it.
 
-Every account comes with its own OpenSignet wallet on Base, created with the account. Nothing
-moves from it without the owner's approval, and its key can be exported at any time. You can also
-link an outside wallet to the account.
+Every account comes with its own OpenSignet wallet on Base, created with the account. While the
+owner is signed in it pays OpenSignet (plans, domains and their renewals) without a code; sending
+funds anywhere else, exporting its key and changing its approvers need the owner's approval (an
+email code or their linked wallet). You can also link an outside wallet to the account.
+
+Cards are saved on Stripe's own page, at a card checkout or with **Add card** in the wallet
+settings. OpenSignet keeps only the brand, the last four digits and the expiry. The default card
+pays whatever is set to renew by card.
 
 An account owns an identity when one of its wallets holds the identity's AgentID, or when the
 account registered it. Managing an identity (DNS, email, API keys and settings) uses the account
@@ -37,8 +42,9 @@ A registration costs the domain at its registrar price, plus any Basename or ENS
 and the current network gas. There is no platform fee. Registration is paid in USDC on Base.
 
 Plans apply to the whole account. Every account starts on the Free plan (catalog key `included`),
-which includes a primary inbox for each identity. Plus, Pro, Max and Enterprise add email volume,
-API keys, DNS records and aliases for every identity in the account. Plans are
+which includes up to 3 identities, each with a primary inbox. Plus, Pro, Max and Enterprise add
+identities and monthly email volume for the account, and API keys, DNS records and aliases for every
+identity in it. Plans are
 bought from the dashboard or the [pricing page](https://opensignet.com/pricing), by card through
 Stripe or in USDC on Base, not during registration. See the
 [plan limits](/api-reference/email/#primary-address-and-aliases).
@@ -79,6 +85,23 @@ Registration progress also has its own `status` (`processing`, `completed`, `act
 Do not submit a second paid registration merely because a request is still processing.
 
 ## Renewal
+
+Automatic renewal is a switch, on by default when you buy. The plan renews on the card it was
+bought with, or from the OpenSignet wallet when it was paid in USDC. Each identity's domain renews
+yearly, from 30 to 7 days before it expires, from the wallet or the saved card, chosen on the
+identity's Domain tab. A change of method applies from the next renewal. The vault signs a wallet
+renewal only when it falls due, only to OpenSignet and never above that item's ceiling.
+
+## Identity profile
+
+Each identity has a sender name and a logo, set at the top of its Domain tab and changed at most
+twice a calendar month. The name is shown next to mail from the identity. A square SVG logo is
+rebuilt as SVG Tiny PS and published as the domain's BIMI logo (`default._bimi`), which inboxes
+that support BIMI show once the domain's mail passes DMARC with enforcement; Gmail and Apple Mail
+also need a Verified Mark Certificate or Common Mark Certificate. PNG, JPG and WebP logos are
+shown in OpenSignet only.
+
+## Onchain renewal vault
 
 Each identity has an expiry. Any wallet can fund its RenewalVault balance. The wallet that holds
 the AgentID can turn on auto-renew on Base and withdraw unused funds. Renewal quotes are computed

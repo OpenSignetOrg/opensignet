@@ -1,8 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { base } from 'wagmi/chains';
-import { ChevronRight, Globe, Plus, RotateCw } from 'lucide-react';
+import { ChevronRight, Globe, Pin, Plus, RotateCw } from 'lucide-react';
 import { AgentOnboarding } from '@/components/onboarding/agent-onboarding';
 import { PlanSummary } from '@/components/dashboard/plan-summary';
 import { DashboardRegistrationUpdates } from '@/components/register/registration-updates';
@@ -166,7 +167,11 @@ function Stat({
   );
 }
 
+const PAGE = 15;
+
 function IdentityTable({ items }: { items: ConsoleIdentity[] }) {
+  const [limit, setLimit] = useState(PAGE);
+  const hidden = items.length - limit;
   return (
     <>
       <div
@@ -179,7 +184,7 @@ function IdentityTable({ items }: { items: ConsoleIdentity[] }) {
         <span />
       </div>
       <ul>
-        {items.map((item) => (
+        {items.slice(0, limit).map((item) => (
           <li key={item.id} className="border-b border-border/60 last:border-b-0">
             <Link
               href={`/dashboard/identities/${encodeURIComponent(item.id)}`}
@@ -188,7 +193,16 @@ function IdentityTable({ items }: { items: ConsoleIdentity[] }) {
               <span className="flex min-w-0 items-center gap-3">
                 <IdentityTile domain={item.domain} />
                 <span className="min-w-0">
-                  <span className="block truncate text-[14.5px] font-medium">{item.domain}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-[14.5px] font-medium">{item.domain}</span>
+                    {item.pinned ? (
+                      <Pin
+                        className="h-3 w-3 shrink-0 text-muted-foreground"
+                        strokeWidth={2}
+                        aria-label="Pinned"
+                      />
+                    ) : null}
+                  </span>
                   <span className="block truncate text-[12.5px] text-muted-foreground">
                     {item.basename ?? `hello@${item.domain}`}
                   </span>
@@ -205,6 +219,19 @@ function IdentityTable({ items }: { items: ConsoleIdentity[] }) {
           </li>
         ))}
       </ul>
+      {hidden > 0 ? (
+        <div className="border-t border-border/60 px-5 py-2.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-full text-[13px] font-medium"
+            onClick={() => setLimit((value) => value + PAGE)}
+          >
+            Show {Math.min(PAGE, hidden)} more
+            <span className="text-muted-foreground">· {hidden} left</span>
+          </Button>
+        </div>
+      ) : null}
     </>
   );
 }

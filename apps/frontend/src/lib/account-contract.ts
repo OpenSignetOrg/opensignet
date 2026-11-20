@@ -157,6 +157,6 @@ export type WalletApprover = z.infer<typeof walletApproverSchema>;
 export type VaultChallenge = z.infer<typeof vaultChallengeSchema>;
 export type AccountErrorCode = (typeof accountErrorCodes)[number];
 
-export const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+export const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 export const AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 export const AVATAR_CHANGES_PER_MONTH = 2;

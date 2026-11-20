@@ -24,12 +24,11 @@ import { Button } from '@/components/ui/button';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { useSiwe } from '@/hooks/use-siwe';
 import { cn } from '@/lib/utils';
-import { ConsoleProvider, useConsole, type ConsoleIdentity } from './console-context';
-import { IdentityTile, StatusDot } from './identity-bits';
+import { ConsoleProvider, useConsole } from './console-context';
+import { SidebarIdentities } from './sidebar-identities';
 
 const DOCS_URL = 'https://docs.opensignet.com';
 /** Identities listed in the sidebar before "View all". */
-const SIDEBAR_IDENTITIES = 8;
 
 interface NavItem {
   href: string;
@@ -192,12 +191,6 @@ function SidebarContent({ pathname, onNavigate }: { pathname: string; onNavigate
   const account = state.status === 'ready' ? state.account : null;
   const identityId = pathname.match(/^\/dashboard\/identities\/([^/]+)/)?.[1];
   const items = identities.status === 'ready' ? identities.items : [];
-  const shown = items.slice(0, SIDEBAR_IDENTITIES);
-  // Keep the open identity visible even when it is beyond the first few.
-  const current = identityId
-    ? items.find((item) => item.id === decodeURIComponent(identityId))
-    : undefined;
-  if (current && !shown.includes(current)) shown.push(current);
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -271,30 +264,11 @@ function SidebarContent({ pathname, onNavigate }: { pathname: string; onNavigate
             No identities yet. Your first domain appears here.
           </p>
         ) : (
-          <ul className="flex flex-col gap-0.5">
-            {shown.map((identity) => (
-              <li key={identity.id}>
-                <IdentityLink
-                  identity={identity}
-                  active={
-                    identityId !== undefined && decodeURIComponent(identityId) === identity.id
-                  }
-                  onNavigate={onNavigate}
-                />
-              </li>
-            ))}
-            {items.length > shown.length ? (
-              <li>
-                <Link
-                  href="/dashboard#identities"
-                  onClick={onNavigate}
-                  className="flex h-8 items-center rounded-lg px-2.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  View all {items.length}
-                </Link>
-              </li>
-            ) : null}
-          </ul>
+          <SidebarIdentities
+            items={items}
+            activeId={identityId ? decodeURIComponent(identityId) : undefined}
+            onNavigate={onNavigate}
+          />
         )}
       </nav>
 
@@ -374,34 +348,6 @@ function SidebarLink({
   );
 }
 
-function IdentityLink({
-  identity,
-  active,
-  onNavigate,
-}: {
-  identity: ConsoleIdentity;
-  active: boolean;
-  onNavigate?: () => void;
-}) {
-  return (
-    <Link
-      href={`/dashboard/identities/${encodeURIComponent(identity.id)}`}
-      onClick={onNavigate}
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'flex h-9 min-w-0 items-center gap-2.5 rounded-lg px-2 text-[13.5px] font-medium transition-[background-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
-        active
-          ? 'console-nav-active text-foreground'
-          : 'text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground',
-      )}
-    >
-      <IdentityTile domain={identity.domain} size="sm" />
-      <span className="min-w-0 flex-1 truncate">{identity.domain}</span>
-      <StatusDot status={identity.status} />
-    </Link>
-  );
-}
-
 function AccountRow({
   name,
   email,
@@ -411,9 +357,14 @@ function AccountRow({
   email: string | null;
   avatar: string | null;
 }) {
-  const { signOut, loading, error } = useSiwe();
+  const { session, signOut, loading, error } = useSiwe();
   const [tried, setTried] = useState(false);
   const label = name || email || 'Your account';
+  // Signed out from the console: leave it for the home page, as Settings does.
+  useEffect(() => {
+    if (tried && !loading && !error && session?.authenticated === false)
+      window.location.replace('/');
+  }, [tried, loading, error, session]);
   return (
     <div className="mt-3 border-t border-border/70 pt-3">
       <div className="flex items-center gap-2.5 rounded-lg px-1.5 py-1">

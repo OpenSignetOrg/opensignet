@@ -170,7 +170,7 @@ function ProfileCard() {
             )}
           </div>
           <p className="mt-2 text-xs leading-5 text-muted-foreground">
-            PNG, JPG or WebP, up to 5 MB.{' '}
+            PNG, JPG or WebP, up to 2 MB.{' '}
             {left > 0
               ? `${left} of ${AVATAR_CHANGES_PER_MONTH} photo changes left this month.`
               : `No photo changes left this month. You can change it again on ${resetsOn}.`}
