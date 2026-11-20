@@ -49,6 +49,11 @@
       "types": "./dist/utils.d.ts",
       "import": "./dist/utils.js",
       "default": "./dist/utils.js"
+    },
+    "./pass-art": {
+      "types": "./dist/pass-art.d.ts",
+      "import": "./dist/pass-art.js",
+      "default": "./dist/pass-art.js"
     }
   },
   "files": [

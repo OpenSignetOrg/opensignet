@@ -50,9 +50,13 @@ export function HeaderSignInButton({
     return (
       <Button
         asChild
-        variant={fullWidth ? 'secondary' : 'outline'}
         size="sm"
-        className={cn(width, className)}
+        className={cn(
+          width,
+          // The one clear way on, in the header and the phone menu: dark, with a soft top light.
+          'shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_14px_28px_-20px_rgba(20,21,18,0.75)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_18px_34px_-22px_rgba(20,21,18,0.85)]',
+          className,
+        )}
       >
         <Link href="/dashboard" onClick={() => onNavigate?.()}>
           <LayoutDashboard className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />

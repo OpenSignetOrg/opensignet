@@ -371,7 +371,7 @@ function Checkout({
             : `Pay ${dueText} with USDC`;
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)] lg:gap-10">
+    <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)] lg:gap-10">
       {/* Order summary: first on phones, on the right from large screens. */}
       <section
         aria-labelledby="checkout-summary"
@@ -593,14 +593,14 @@ function Checkout({
             className="group/pay mt-5 h-12 w-full text-[15px]"
           >
             {working ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
             ) : (
-              <LockKeyhole className="h-4 w-4" aria-hidden />
+              <LockKeyhole className="h-4 w-4 shrink-0" aria-hidden />
             )}
             {payLabel}
             {!working ? (
               <ArrowRight
-                className="h-4 w-4 transition-transform group-hover/pay:translate-x-0.5 motion-reduce:transition-none"
+                className="h-4 w-4 shrink-0 transition-transform group-hover/pay:translate-x-0.5 motion-reduce:transition-none"
                 aria-hidden
               />
             ) : null}
@@ -621,7 +621,7 @@ function Checkout({
           </p>
         </div>
 
-        <p className="mt-4 px-1 text-xs leading-5 text-muted-foreground">
+        <p className="mt-4 px-1 text-center text-xs leading-5 text-muted-foreground">
           By continuing, you agree to the{' '}
           <Link href="/terms" className="font-medium text-foreground underline underline-offset-4">
             Terms of Service
@@ -821,7 +821,7 @@ export function MethodPicker<M extends CheckoutMethod>({
             onClick={() => onChange(option)}
             onKeyDown={(event) => onKeyDown(event, option)}
             className={cn(
-              'relative flex items-start gap-3 rounded-xl border p-4 text-left transition-[border-color,background-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 disabled:pointer-events-none',
+              'group relative flex items-start gap-3 rounded-xl border p-4 text-left transition-[border-color,background-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 disabled:pointer-events-none',
               unavailable && 'opacity-60',
               selected
                 ? 'border-primary/70 bg-card shadow-[0_10px_24px_-18px_rgba(20,21,18,0.55)] ring-1 ring-primary/40'
@@ -851,16 +851,23 @@ export function MethodPicker<M extends CheckoutMethod>({
                 {descriptions?.[option] ?? description}
               </span>
             </span>
+            {/* The choice mark sits centred on the card's right edge. */}
             <span
               aria-hidden
               className={cn(
-                'mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border',
-                selected ? 'border-primary bg-primary' : 'border-border bg-background',
+                'inline-flex h-5 w-5 shrink-0 items-center justify-center self-center rounded-full border-[1.5px] transition-[background-color,border-color,box-shadow] duration-200 motion-reduce:transition-none',
+                selected
+                  ? 'border-primary bg-primary shadow-[0_0_0_4px_hsl(var(--primary)/0.12)]'
+                  : 'border-border bg-background group-hover:border-primary/45',
               )}
             >
-              {selected ? (
-                <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
-              ) : null}
+              <Check
+                className={cn(
+                  'h-3 w-3 text-primary-foreground transition-[opacity,transform] duration-200 motion-reduce:transition-none',
+                  selected ? 'scale-100 opacity-100' : 'scale-50 opacity-0',
+                )}
+                strokeWidth={3}
+              />
             </span>
           </button>
         );
