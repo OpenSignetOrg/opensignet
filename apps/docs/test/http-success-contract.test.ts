@@ -40,6 +40,7 @@ const expected: [HttpMethod, string, string, string[], AuthScope][] = [
   ['get', '/api/v1/agents/{id}/dns/export', 'exportDnsZone', ['200'], 'agent'],
   ['get', '/api/v1/agents/{id}/email', 'listEmail', ['200'], 'agent'],
   ['delete', '/api/v1/agents/{id}/email/{messageId}', 'deleteEmail', ['200'], 'agent'],
+  ['patch', '/api/v1/agents/{id}/email/{messageId}', 'markEmailRead', ['200'], 'agent'],
   ['patch', '/api/v1/agents/{id}/email', 'replacePrimaryEmail', ['200', '202'], 'agent'],
   ['post', '/api/v1/agents/{id}/email/aliases', 'createEmailAlias', ['200', '201', '202'], 'agent'],
   ['delete', '/api/v1/agents/{id}/email/aliases', 'deleteEmailAlias', ['200', '202'], 'agent'],
@@ -71,7 +72,7 @@ const expected: [HttpMethod, string, string, string[], AuthScope][] = [
 ];
 
 function assertMatrix(operations: readonly PublicOperation[]): void {
-  assert.equal(operations.length, 39);
+  assert.equal(operations.length, 40);
   for (const [method, path, id, statuses, scope] of expected) {
     const entry = operations.find((entry) => entry.method === method && entry.path === path);
     assert.ok(entry, `${method} ${path}`);
@@ -94,7 +95,7 @@ function assertMatrix(operations: readonly PublicOperation[]): void {
   }
 }
 
-test('all 39 documented HTTP operations have exact reviewed success and authentication contracts', () => {
+test('all 40 documented HTTP operations have exact reviewed success and authentication contracts', () => {
   assertMatrix(publicOperations());
 });
 

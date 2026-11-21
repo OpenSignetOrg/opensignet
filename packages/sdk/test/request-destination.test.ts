@@ -76,6 +76,7 @@ const flows: Flow[] = [
   ['plan read', (ad, id) => ad.getServicePlan(id), '/plan', 'GET'],
   ['domain read', (ad, id) => ad.getDomain(id), '/domain', 'GET'],
   ['renewal read', (ad, id) => ad.getRenewal(id), '/renewal', 'GET'],
+  ['message read', (ad, id) => ad.setEmailRead(id, id, true), '/email/:id', 'PATCH'],
   ['renewal on', (ad, id) => ad.setAutoRenew(id, true), '/domain/auto-renew', 'POST'],
   ['renewal off', (ad, id) => ad.setAutoRenew(id, false), '/domain/auto-renew/off', 'POST'],
 ];

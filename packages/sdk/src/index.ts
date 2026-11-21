@@ -239,7 +239,12 @@ export interface EmailAddressSummary {
 export interface EmailListResult {
   inbox: unknown;
   addresses?: EmailAddressSummary[];
-  limits?: { plan: ServicePlanKey; planLabel: string; emailAliases: number };
+  limits?: {
+    plan: ServicePlanKey;
+    planLabel: string;
+    emailAliases: number;
+    retentionDays?: number;
+  };
   messages: EmailMessage[];
   addressChange?: EmailAddressChangeStatus | null;
   mailStatus?: EmailServiceStatus;
@@ -835,6 +840,25 @@ export class OpenSignet {
     if (result.mailStatus !== undefined)
       result.mailStatus = emailServiceStatusSchema.parse(result.mailStatus);
     return result;
+  }
+
+  /** Marks a message read or unread. */
+  async setEmailRead(
+    agentId: string,
+    messageId: string,
+    read: boolean,
+  ): Promise<{ message: EmailMessage }> {
+    // Trusted constructor API base; inputs are encoded path/query data, not destination URLs.
+    const res = await this.signedFetch(
+      `${this.apiUrl}/agents/${encodeApiPathSegment(agentId)}/email/${encodeApiPathSegment(messageId)}`, // nosemgrep: nodejs_scan.javascript-ssrf-rule-node_ssrf
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ read }),
+      },
+    );
+    if (!res.ok) throw new Error(await responseError(res));
+    return res.json();
   }
 
   async deleteEmailMessage(

@@ -11,11 +11,15 @@ request signature of the account that owns it. See
 
 ```http
 GET    /api/v1/agents/:id/email
+PATCH  /api/v1/agents/:id/email/:messageId
 DELETE /api/v1/agents/:id/email/:messageId
 ```
 
-Use `limit` and `unreadOnly` on list requests. Accepted message content is available for 15 days on the Free plan and 30 days on paid plans.
-Deleting a message makes it unavailable immediately.
+Use `limit`, `unreadOnly` and `direction` (`inbound` or `outbound`) on list requests. Accepted
+message content is kept for 15 days on the Free plan and 30 days on paid plans; `limits.retentionDays`
+reports the current value, and a plan change applies to the messages already kept. `PATCH` with
+`{ "read": true }` or `{ "read": false }` marks a message. Deleting a message makes it unavailable
+immediately.
 The response can also include `addressChange` and `mailStatus`. `sync=false` skips the current
 provider check and may return `mailStatus.state: "unchecked"`; this is not a readiness confirmation.
 `addressChange: { "phase": "unavailable" }` means the change status could not be checked. Other
@@ -136,6 +140,7 @@ outbound recipients.
 | Operation                   | Success | Required outer fields                                               |
 | --------------------------- | ------- | ------------------------------------------------------------------- |
 | Inbox GET                   | `200`   | `inbox`, `addresses`, `limits`, `messages`                          |
+| Message PATCH               | `200`   | `message`                                                           |
 | Message DELETE              | `200`   | `deleted`, `messageId`                                              |
 | Primary address PATCH       | `200`   | `inbox`, `addresses`, `message`                                     |
 | Alias POST                  | `201`   | `address`, `addresses`                                              |
