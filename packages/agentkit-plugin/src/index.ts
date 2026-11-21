@@ -71,12 +71,32 @@ const QuoteSchema = z.object({
   years: z.number().int().min(1).max(10).default(1),
 });
 
+const Addresses = z.union([z.string().email(), z.array(z.string().email()).min(1).max(50)]);
 const SendEmailSchema = z.object({
   agentId: z.string(),
-  to: z.union([z.string().email(), z.array(z.string().email()).min(1).max(10)]),
-  subject: z.string().min(1).max(200),
-  text: z.string().min(1).max(20_000),
-  fromAddress: z.string().email().optional(),
+  to: Addresses,
+  cc: Addresses.optional(),
+  bcc: Addresses.optional().describe('Delivered, but never shown in the message.'),
+  replyTo: Addresses.optional(),
+  subject: z.string().min(1).max(998),
+  text: z.string().max(2_000_000).optional().describe('Plain-text body. Send text, html or both.'),
+  html: z.string().max(2_000_000).optional(),
+  fromAddress: z
+    .string()
+    .email()
+    .optional()
+    .describe('The primary address or an active alias; the primary when left out.'),
+  fromName: z.string().max(100).optional(),
+  sendAt: z
+    .string()
+    .datetime({ offset: true })
+    .optional()
+    .describe('Send later: an ISO 8601 time up to 30 days ahead.'),
+  idempotencyKey: z
+    .string()
+    .max(255)
+    .optional()
+    .describe('A UUID kept with this send; the same key within 24 hours returns the first result.'),
 });
 
 const ListEmailSchema = z.object({
@@ -89,8 +109,12 @@ const DeleteEmailMessageSchema = z.object({
 });
 const BatchEmailSchema = z.object({
   agentId: z.string(),
-  messages: z.array(SendEmailSchema.omit({ agentId: true })).max(100),
-  idempotencyKey: z.string().max(256).optional(),
+  messages: z
+    .array(SendEmailSchema.omit({ agentId: true, idempotencyKey: true }))
+    .min(1)
+    .max(100),
+  validationMode: z.enum(['strict', 'partial']).optional(),
+  idempotencyKey: z.string().max(255).optional(),
 });
 const EmailUsageSchema = z.object({ agentId: z.string() });
 const EmailWebhookSchema = z.object({
@@ -281,7 +305,8 @@ export class OpenSignetActionProvider {
       },
       {
         name: 'send_agent_email',
-        description: 'Send text-only email from an agent primary email or active alias.',
+        description:
+          "Send email from the identity's primary address or an active alias, signed with its DKIM keys: text or HTML, cc, bcc, reply-to and scheduling. Reuse idempotencyKey on retries.",
         schema: SendEmailSchema,
         invoke: this.sendEmail.bind(this),
       },
@@ -544,13 +569,11 @@ export class OpenSignetActionProvider {
 
   private async sendEmail(walletProvider: WalletProvider, args: z.infer<typeof SendEmailSchema>) {
     const { ad } = this.createOpenSignet(walletProvider);
-    const result = await ad.sendEmail(args.agentId, {
-      to: args.to,
-      fromAddress: args.fromAddress,
-      subject: args.subject,
-      text: args.text,
-    });
-    return `Email queued: ${result.id}`;
+    const { agentId, ...message } = args;
+    const result = await ad.sendEmail(agentId, message);
+    return result.code
+      ? `${result.message} Message ${result.id}.`
+      : `Email ${result.status === 'scheduled' ? 'scheduled' : 'queued'}: ${result.id}`;
   }
 
   private async listEmail(walletProvider: WalletProvider, args: z.infer<typeof ListEmailSchema>) {
@@ -576,6 +599,7 @@ export class OpenSignetActionProvider {
     return JSON.stringify(
       await ad.sendEmailBatch(args.agentId, {
         messages: args.messages,
+        validationMode: args.validationMode,
         idempotencyKey: args.idempotencyKey,
       }),
       null,

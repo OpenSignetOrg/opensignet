@@ -320,16 +320,57 @@ export function publicSchemas(): Record<string, Schema> {
         'Response fields are not fully specified in this catalog. Consult the linked public guide and validate the actual response; no complete response schema is claimed.',
       'x-schema-coverage': 'unspecified',
     },
-    EmailSend: object(
-      {
-        to: { oneOf: [string, { type: 'array', items: string }] },
-        subject: string,
-        text: string,
-        fromAddress: string,
-        replyTo: string,
-      },
-      ['to', 'subject', 'text'],
-    ),
+    EmailSend: {
+      ...object(
+        {
+          to: ref('EmailAddresses'),
+          cc: ref('EmailAddresses'),
+          bcc: {
+            allOf: [ref('EmailAddresses')],
+            description: 'Delivered, but never named in a header of the message.',
+          },
+          replyTo: ref('EmailAddresses'),
+          fromAddress: {
+            type: 'string',
+            description: 'The primary address or an active alias; the primary when left out.',
+          },
+          fromName: { type: 'string', maxLength: 100 },
+          subject: { type: 'string', minLength: 1, maxLength: 998 },
+          text: {
+            type: 'string',
+            description: 'At least one of text and html; each at most 2 MB.',
+          },
+          html: { type: 'string' },
+          attachments: {
+            type: 'array',
+            maxItems: 20,
+            description: 'At most 10 MB together. Programs and scripts are refused.',
+            items: object(
+              {
+                filename: { type: 'string', maxLength: 255 },
+                content: { type: 'string', format: 'byte', description: 'The file in base64.' },
+                contentType: {
+                  type: 'string',
+                  description: 'Inferred from the name when left out.',
+                },
+              },
+              ['filename', 'content'],
+            ),
+          },
+          sendAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Send later, up to 30 days ahead.',
+          },
+        },
+        ['to', 'subject'],
+      ),
+      additionalProperties: false,
+    },
+    EmailAddresses: {
+      oneOf: [string, { type: 'array', items: string, maxItems: 50 }],
+      description: 'One address or a list; to, cc and bcc together are at most 50.',
+    },
     RegistrationNotice: object({
       noticeId: string,
       source: { type: 'string', enum: ['client', 'registration'] },
@@ -601,52 +642,78 @@ export function publicSchemas(): Record<string, Schema> {
       'deleted',
       'addresses',
     ]),
+    EmailRecipientResult: object(
+      { id: string, to: string, status: { type: 'string', enum: ['queued', 'suppressed'] } },
+      ['id', 'to', 'status'],
+    ),
+    EmailAllowance: object({ limit: number, used: number, remaining: number }, [
+      'limit',
+      'used',
+      'remaining',
+    ]),
     EmailQueuedResponse: object(
       {
         id: string,
-        status: { type: 'string', enum: ['queued'] },
-        messages: array(ref('ResponseObject')),
-        queueDeferred: bool,
+        status: { type: 'string', enum: ['queued', 'scheduled'] },
+        messageId: string,
+        sendAt: { type: 'string', format: 'date-time' },
+        messages: array(ref('EmailRecipientResult')),
+        usage: ref('EmailAllowance'),
       },
-      ['id', 'status', 'messages'],
+      ['id', 'status', 'messageId', 'sendAt', 'messages', 'usage'],
     ),
     EmailPartialResponse: object(
       {
         id: string,
-        status: { type: 'string', enum: ['queued'] },
+        status: { type: 'string', enum: ['queued', 'scheduled'] },
         code: { type: 'string', enum: ['EMAIL_PARTIALLY_QUEUED'] },
-        messages: array(ref('ResponseObject')),
-        usage: ref('ResponseObject'),
+        message: string,
+        messageId: string,
+        sendAt: { type: 'string', format: 'date-time' },
+        messages: array(ref('EmailRecipientResult')),
+        usage: ref('EmailAllowance'),
       },
-      ['id', 'status', 'code', 'messages', 'usage'],
+      ['id', 'status', 'code', 'message', 'messages', 'usage'],
     ),
     EmailBatchJob: object(
       {
         index: number,
         id: string,
-        recipient: string,
-        status: { type: 'string', enum: ['queued'] },
+        status: { type: 'string', enum: ['queued', 'scheduled'] },
+        messageId: string,
+        sendAt: { type: 'string', format: 'date-time' },
+        messages: array(ref('EmailRecipientResult')),
       },
-      ['index', 'id', 'recipient', 'status'],
+      ['index', 'id', 'status', 'messages'],
+    ),
+    EmailBatchError: object(
+      {
+        index: number,
+        code: string,
+        message: string,
+        field: { type: 'string', nullable: true },
+      },
+      ['index', 'code', 'message'],
     ),
     EmailBatchQueuedResponse: object(
       {
-        batchId: string,
         status: { type: 'string', enum: ['queued'] },
         jobs: array(ref('EmailBatchJob')),
-        errors: array(ref('ResponseObject')),
-        queueDeferred: bool,
+        errors: array(ref('EmailBatchError')),
+        usage: ref('EmailAllowance'),
       },
-      ['batchId', 'status', 'jobs', 'errors'],
+      ['status', 'jobs', 'errors', 'usage'],
     ),
     EmailBatchPartialResponse: object(
       {
+        status: { type: 'string', enum: ['queued'] },
         code: { type: 'string', enum: ['BATCH_PARTIALLY_QUEUED'] },
         message: string,
         jobs: array(ref('EmailBatchJob')),
-        usage: ref('ResponseObject'),
+        errors: array(ref('EmailBatchError')),
+        usage: ref('EmailAllowance'),
       },
-      ['code', 'message', 'jobs', 'usage'],
+      ['status', 'code', 'message', 'jobs', 'errors', 'usage'],
     ),
     EmailBatchResponse: {
       anyOf: [ref('EmailBatchQueuedResponse'), ref('EmailBatchPartialResponse')],
@@ -655,7 +722,6 @@ export function publicSchemas(): Record<string, Schema> {
       {
         agentId: string,
         plan: string,
-        planSku: string,
         limit: number,
         requestsPerSecond: number,
         sent: number,
@@ -669,7 +735,6 @@ export function publicSchemas(): Record<string, Schema> {
       [
         'agentId',
         'plan',
-        'planSku',
         'limit',
         'requestsPerSecond',
         'sent',
@@ -1154,15 +1219,27 @@ export function publicOperations(): PublicOperation[] {
     idempotency,
     success: 'Queued, not proof of final delivery.',
     description:
-      'fromAddress must be an active primary address or alias. Every recipient consumes allowance. Handle concurrent quota/rate failures even after reading usage.',
+      'Signed with the domain DKIM keys (RSA and Ed25519), stored sealed and delivered to each recipient separately; deferred deliveries are retried for up to 72 hours. fromAddress must be the primary address or an active alias. Every queued recipient consumes allowance. Handle concurrent quota and rate failures even after reading usage.',
     responses: {
+      400: {
+        ...errorResponse,
+        description:
+          'INVALID_REQUEST: the body is not JSON or has an unknown field, which the message names.',
+      },
       409: {
         ...errorResponse,
-        description: 'Idempotency key was reused with different normalized content.',
+        description:
+          'IDEMPOTENCY_KEY_REUSED: the key was used for different content. IDEMPOTENCY_KEY_IN_PROGRESS: the first request with the key is still being handled.',
+      },
+      422: {
+        ...errorResponse,
+        description:
+          'The message failed a check (details.field names the field), or EMAIL_RECIPIENTS_SUPPRESSED: every recipient is on the suppression list.',
       },
       429: {
         ...errorResponse,
-        description: 'Rate or quota limit reached. Honor Retry-After when supplied.',
+        description:
+          'EMAIL_RATE_LIMITED (honor Retry-After) or EMAIL_QUOTA_EXCEEDED (details.remaining and details.resetsOn).',
       },
     },
   });
@@ -1175,7 +1252,7 @@ export function publicOperations(): PublicOperation[] {
     {
       request: object(
         {
-          messages: { type: 'array', maxItems: 100, items: ref('EmailSend') },
+          messages: { type: 'array', minItems: 1, maxItems: 100, items: ref('EmailSend') },
           validationMode: { type: 'string', enum: ['strict', 'partial'] },
         },
         ['messages'],
@@ -1183,15 +1260,21 @@ export function publicOperations(): PublicOperation[] {
       parameters: [idempotencyHeader],
       idempotency,
       description:
-        'strict rejects an invalid batch; partial reports invalid items and eligible recipients. Use actual per-recipient results.',
+        'Every message is checked before any is queued. strict (the default) sends nothing when any message is invalid; partial queues the valid messages and lists the others in errors. Use the per-recipient results.',
       responses: {
         409: {
           ...errorResponse,
-          description: 'Idempotency key was reused with different normalized content.',
+          description:
+            'The idempotency key was used for different content, or is still in progress.',
+        },
+        422: {
+          ...errorResponse,
+          description:
+            'BATCH_INVALID (details.errors lists each invalid message by index) or BATCH_SIZE (1 to 100 messages).',
         },
         429: {
           ...errorResponse,
-          description: 'Rate or quota limit reached. Inspect actual per-recipient outcomes.',
+          description: 'EMAIL_RATE_LIMITED (honor Retry-After) or EMAIL_QUOTA_EXCEEDED.',
         },
       },
     },

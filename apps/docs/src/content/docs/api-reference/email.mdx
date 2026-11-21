@@ -20,6 +20,8 @@ message content is kept for 15 days on the Free plan and 30 days on paid plans; 
 reports the current value, and a plan change applies to the messages already kept. `PATCH` with
 `{ "read": true }` or `{ "read": false }` marks a message. Deleting a message makes it unavailable
 immediately.
+Each message has a `status`. Sent mail is `queued`, `scheduled` (with `sendAt`), `sending`, `sent`,
+`partially_sent`, `failed`, `suppressed` or `cancelled`; received mail is `stored`.
 The response can also include `addressChange` and `mailStatus`. `sync=false` skips the current
 provider check and may return `mailStatus.state: "unchecked"`; this is not a readiness confirmation.
 `addressChange: { "phase": "unavailable" }` means the change status could not be checked. Other
@@ -71,22 +73,61 @@ POST /api/v1/agents/:id/email/send
 
 ```json
 {
-  "to": "operator@example.com",
+  "to": ["operator@example.com"],
+  "cc": "lead@example.com",
   "fromAddress": "billing@example.com",
   "subject": "Service online",
-  "text": "The identity is ready."
+  "text": "The identity is ready.",
+  "html": "<p>The identity is <b>ready</b>.</p>",
+  "attachments": [{ "filename": "status.pdf", "content": "JVBERi0xLjcK..." }],
+  "sendAt": "2026-12-01T09:00:00Z"
 }
 ```
 
-`fromAddress` is optional and must be the active primary address or an active alias. A successful
-request returns a queued status. Every recipient counts once against the combined monthly sent and
-received allowance.
+| Field          | Required | Notes                                                                                                                                                     |
+| -------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `to`           | Yes      | One address or a list. `to`, `cc` and `bcc` together are at most 50.                                                                                      |
+| `cc`, `bcc`    | No       | `bcc` recipients get the message, but no header in it names them.                                                                                         |
+| `replyTo`      | No       | One address or a list.                                                                                                                                    |
+| `fromAddress`  | No       | The primary address or an active alias. The primary when left out.                                                                                        |
+| `fromName`     | No       | The sender name, one line of up to 100 characters. The profile name when left out.                                                                        |
+| `subject`      | Yes      | One line of up to 998 characters.                                                                                                                         |
+| `text`, `html` | One      | At least one of the two; each at most 2 MB.                                                                                                               |
+| `attachments`  | No       | Up to 20 files, 10 MB together: `filename`, base64 `content`, optional `contentType`. Programs and scripts (such as `.exe`, `.js` or `.bat`) are refused. |
+| `sendAt`       | No       | Send later, up to 30 days ahead. A past time sends now.                                                                                                   |
 
-Send `Idempotency-Key` when a client may retry. Keys remain valid for 24 hours and are bound to the
-normalized request. A key reused with different content returns `409 IDEMPOTENCY_KEY_REUSED`.
+Every message is signed with the domain's own DKIM keys, RSA and Ed25519, so it passes DKIM and
+DMARC alignment at the receiving server. It is stored sealed (encrypted at rest) for the plan's
+retention and delivered to each recipient separately. A delivery that a receiving server defers
+is retried for up to 72 hours; one it refuses is not retried. An address that refused mail as
+unknown is added to the domain's suppression list, and later messages skip it.
 
-The send endpoint is limited to 12 requests per second. Quota and rate failures return `429` with a
-stable error code; rate-limited responses include `Retry-After`.
+A request with an unknown field is refused with `400 INVALID_REQUEST`, naming the field. A
+message that fails a check is refused with `422` and a stable code, such as `INVALID_RECIPIENT`,
+`TOO_MANY_RECIPIENTS`, `BODY_REQUIRED`, `FROM_ADDRESS_NOT_ALLOWED`, `ATTACHMENT_TYPE_BLOCKED`,
+`ATTACHMENTS_TOO_LARGE` or `SEND_AT_TOO_FAR`, with `details.field` naming the field. A refused
+message uses none of the allowance.
+
+The answer has the message `id`, its `messageId` header, `status` (`queued`, or `scheduled` with
+`sendAt`), one entry per recipient in `messages`, and `usage` (`limit`, `used`, `remaining`).
+When some recipients are on the suppression list, the message is queued for the others with
+`202 EMAIL_PARTIALLY_QUEUED`, and those recipients show `status: "suppressed"`. When every
+recipient is, nothing is sent: `422 EMAIL_RECIPIENTS_SUPPRESSED`. Deleting a message that is
+scheduled or still being retried stops it for every recipient it has not reached.
+
+Every recipient counts once against the combined monthly sent and received allowance, and only
+recipients the message is queued for are counted. A send that would go past the allowance is
+refused with `429 EMAIL_QUOTA_EXCEEDED`; `details` gives `remaining`, `requested` and `resetsOn`.
+
+Send `Idempotency-Key` when a client may retry. Within 24 hours the same key and the same request
+return the first answer (with the header `Idempotent-Replayed: true`) instead of sending again.
+The key is bound to the normalized request: the same key with different content returns
+`409 IDEMPOTENCY_KEY_REUSED`, and a retry while the first request is still being handled returns
+`409 IDEMPOTENCY_KEY_IN_PROGRESS`. A request that failed gives its key back, so it can be retried
+with the same key.
+
+Each identity can make 12 send or batch requests a second. More return
+`429 EMAIL_RATE_LIMITED` with `Retry-After`.
 
 ## Batch send
 
@@ -94,10 +135,27 @@ stable error code; rate-limited responses include `Retry-After`.
 POST /api/v1/agents/:id/email/batch
 ```
 
-A batch accepts up to 100 message objects and supports the same 24-hour idempotency contract.
-`validationMode: "strict"` rejects the whole batch when an item is invalid. `"partial"` reports
-invalid items and accepts eligible recipients. Treat the returned per-recipient results as the
-source of truth.
+```json
+{
+  "validationMode": "partial",
+  "messages": [
+    { "to": "ops@example.com", "subject": "Status", "text": "Online." },
+    { "to": "lead@example.com", "subject": "Status", "text": "Online." }
+  ]
+}
+```
+
+A batch carries 1 to 100 messages, each with the same fields as a single send, in one request of
+at most 20 MB. Every message is checked before any is queued. `validationMode: "strict"` (the
+default) sends nothing when any message is invalid: `422 BATCH_INVALID`, with `details.errors`
+listing each invalid message by `index`, `code`, `message` and `field`. `"partial"` queues the
+valid messages and lists the others in `errors`.
+
+The answer is `202` with `status`, `jobs` (one per queued message, with its `index` in the
+request and its per-recipient `messages`), `errors` and `usage`. When some messages or recipients
+were not queued it also has `code: "BATCH_PARTIALLY_QUEUED"` and a `message`. Batches follow the
+same allowance, suppression and idempotency rules as single sends; treat the per-recipient
+results as the source of truth.
 
 ## Usage
 
@@ -106,7 +164,8 @@ GET /api/v1/agents/:id/email/usage
 ```
 
 The response reports the current plan, monthly limit, sent, received, reserved, used, remaining,
-and cycle dates. Check it before large sends, but still handle concurrent `429` responses.
+`requestsPerSecond` and the cycle dates (the calendar month, UTC). Check it before large sends,
+but still handle concurrent `429` responses.
 
 ## Signed inbound webhook
 
@@ -145,10 +204,10 @@ outbound recipients.
 | Primary address PATCH       | `200`   | `inbox`, `addresses`, `message`                                     |
 | Alias POST                  | `201`   | `address`, `addresses`                                              |
 | Alias DELETE                | `200`   | `deleted`, `addresses`                                              |
-| Send POST, normal enqueue   | `201`   | `id`, `status`, `messages`                                          |
-| Send POST, partial enqueue  | `202`   | `id`, `status`, `code`, `messages`, `usage`                         |
-| Batch POST, normal enqueue  | `202`   | `batchId`, `status`, `jobs`, `errors`                               |
-| Batch POST, partial enqueue | `202`   | `code`, `message`, `jobs`, `usage`                                  |
+| Send POST, normal enqueue   | `201`   | `id`, `status`, `messageId`, `sendAt`, `messages`, `usage`          |
+| Send POST, partial enqueue  | `202`   | `id`, `status`, `code`, `message`, `messages`, `usage`              |
+| Batch POST, normal enqueue  | `202`   | `status`, `jobs`, `errors`, `usage`                                 |
+| Batch POST, partial enqueue | `202`   | `status`, `code`, `message`, `jobs`, `errors`, `usage`              |
 | Usage GET                   | `200`   | Plan/cycle/counter fields, `used`, `remaining`, `requestsPerSecond` |
 | Webhook GET                 | `200`   | `webhook`, which can be `null`                                      |
 | Webhook PUT, update         | `200`   | `webhook`                                                           |
@@ -159,9 +218,8 @@ outbound recipients.
 | Blocklist DELETE            | `200`   | `ok`                                                                |
 
 `EMAIL_PARTIALLY_QUEUED` and `BATCH_PARTIALLY_QUEUED` identify accepted subsets.
-A partial batch response does not promise `batchId`, `status` or `errors` fields;
-inspect its actual variant and returned jobs. Optional `queueDeferred` can appear
-on normal queued responses. None of these statuses establishes final delivery.
+Queued is not delivered: a message's `status` in the inbox list moves on to `sent`,
+`partially_sent` or `failed` as its deliveries finish.
 
 Do not resend the entire request with a new idempotency key after partial or
 uncertain acceptance. Keep the original key and reconcile its returned items.

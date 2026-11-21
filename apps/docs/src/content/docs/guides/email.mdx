@@ -24,6 +24,29 @@ await openSignet.sendEmail(agentId, {
 Persist an idempotency key with the caller's operation until the request outcome is known. Reuse it
 only for the identical request. Generate a new key for new content.
 
+Messages can carry HTML, cc and bcc, attachments and a send time:
+
+```ts
+const result = await openSignet.sendEmail(agentId, {
+  to: ['operator@example.com'],
+  bcc: 'audit@example.com',
+  subject: 'Monthly report',
+  text: 'The report is attached.',
+  html: '<p>The report is <b>attached</b>.</p>',
+  attachments: [{ filename: 'report.pdf', content: reportPdfBase64 }],
+  sendAt: new Date('2026-12-01T09:00:00Z'),
+  idempotencyKey: crypto.randomUUID(),
+});
+if (result.code === 'EMAIL_PARTIALLY_QUEUED') {
+  // Some recipients bounced before and were skipped; see result.messages.
+}
+```
+
+Mail is signed with the domain's own DKIM keys and sent from its primary address or an active
+alias. Queued is not delivered: the message's `status` in the inbox moves on to `sent`,
+`partially_sent` or `failed`. An address that refused mail as unknown is skipped from then on.
+To stop a scheduled message, delete it.
+
 Before a large send, inspect usage:
 
 ```ts

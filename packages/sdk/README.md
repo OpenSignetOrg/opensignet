@@ -302,6 +302,28 @@ Batch and BIND imports must be previewed first. Apply calls require the
 newer zone. System-managed email, verification, and routing records remain
 read-only and are preserved during replace operations.
 
+## Sending mail
+
+Every message is signed with the domain's own DKIM keys (RSA and Ed25519) and sent from its
+primary address or an active alias. HTML, cc, bcc, attachments and scheduling are supported:
+
+```ts
+await agent.sendEmail(agentId, {
+  to: ['ops@example.com'],
+  cc: 'lead@example.com',
+  subject: 'Weekly report',
+  text: 'The report is attached.',
+  html: '<p>The report is <b>attached</b>.</p>',
+  attachments: [{ filename: 'report.pdf', content: reportPdfBase64 }],
+  sendAt: new Date(Date.now() + 60 * 60 * 1000),
+  idempotencyKey: crypto.randomUUID(), // keep it with the operation and reuse it on retries
+});
+```
+
+A message goes to at most 50 recipients across `to`, `cc` and `bcc`; attachments add up to at
+most 10 MB. A result with `code: 'EMAIL_PARTIALLY_QUEUED'` was queued for some recipients only:
+the others bounced before and are skipped.
+
 ## Monthly usage, batch send, and inbound webhooks
 
 All plans combine sent recipients and accepted inbound messages into one monthly
@@ -309,8 +331,9 @@ quota. Send up to 100 message objects in one batch request, inspect current
 usage, and configure a signed inbound webhook:
 
 ```ts
-await agent.sendEmailBatch(agentId, {
+const batch = await agent.sendEmailBatch(agentId, {
   messages: [{ to: 'ops@example.com', subject: 'Status', text: 'Agent online.' }],
+  validationMode: 'partial', // send the valid messages, report the others in batch.errors
 });
 
 const usage = await agent.getEmailUsage(agentId);
@@ -323,8 +346,8 @@ const webhook = await agent.setEmailWebhook(agentId, {
 
 ## Email addresses
 
-Every agent gets one editable primary email address. Plus agents can create 5
-aliases, Pro agents 10, and Enterprise agents 20.
+Every identity gets one editable primary email address and, by plan, aliases: 1 on Free, 5 on
+Plus, 10 on Pro, 15 on Max and 20 on Enterprise.
 
 ```ts
 const requestId = crypto.randomUUID(); // Persist for this operation, including retries.

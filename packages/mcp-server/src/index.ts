@@ -267,17 +267,55 @@ const TOOL_DEFINITIONS: Tool[] = [
   },
   {
     name: 'send_agent_email',
-    description: "Send an email from an agent's address (requires email-enabled identity).",
+    description:
+      "Send an email from the identity's own domain, signed with its DKIM keys. Each recipient counts toward the monthly allowance. Pass the same idempotencyKey when retrying so the message is not sent twice.",
     inputSchema: {
       type: 'object',
       properties: {
         agentId: { type: 'string', description: 'OpenSignet agent ID (UUID)' },
-        to: { type: 'string' },
+        to: {
+          oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, maxItems: 50 }],
+          description: 'One address or a list. To, cc and bcc together are at most 50.',
+        },
+        cc: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
+        bcc: {
+          oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+          description: 'Delivered, but never shown in the message.',
+        },
+        replyTo: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
         subject: { type: 'string' },
-        text: { type: 'string' },
+        text: { type: 'string', description: 'Plain-text body. Send text, html or both.' },
+        html: { type: 'string', description: 'HTML body.' },
         fromAddress: {
           type: 'string',
-          description: 'Optional primary or active alias address to send from.',
+          description: 'The primary address or an active alias; the primary when left out.',
+        },
+        fromName: {
+          type: 'string',
+          description: "Sender name; the identity's profile name when left out.",
+        },
+        attachments: {
+          type: 'array',
+          maxItems: 20,
+          description: 'At most 20 files and 10 MB together. Programs and scripts are refused.',
+          items: {
+            type: 'object',
+            properties: {
+              filename: { type: 'string' },
+              content: { type: 'string', description: 'The file in base64.' },
+              contentType: { type: 'string' },
+            },
+            required: ['filename', 'content'],
+          },
+        },
+        sendAt: {
+          type: 'string',
+          description: 'Send later: an ISO 8601 time up to 30 days ahead.',
+        },
+        idempotencyKey: {
+          type: 'string',
+          description:
+            'A UUID kept with this send; the same key within 24 hours returns the first result.',
         },
       },
       required: ['agentId', 'to', 'subject'],
@@ -299,7 +337,7 @@ const TOOL_DEFINITIONS: Tool[] = [
   {
     name: 'send_agent_email_batch',
     description:
-      'Queue up to 100 emails in one request; each recipient counts toward monthly usage.',
+      'Queue up to 100 emails in one request; each recipient counts toward monthly usage. strict (the default) sends nothing when any message is invalid; partial sends the valid ones and lists the others in errors.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -310,14 +348,56 @@ const TOOL_DEFINITIONS: Tool[] = [
           items: {
             type: 'object',
             properties: {
-              to: { type: 'string' },
+              to: {
+                oneOf: [
+                  { type: 'string' },
+                  { type: 'array', items: { type: 'string' }, maxItems: 50 },
+                ],
+                description: 'One address or a list. To, cc and bcc together are at most 50.',
+              },
+              cc: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
+              bcc: {
+                oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+                description: 'Delivered, but never shown in the message.',
+              },
+              replyTo: {
+                oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+              },
               subject: { type: 'string' },
-              text: { type: 'string' },
-              fromAddress: { type: 'string' },
+              text: { type: 'string', description: 'Plain-text body. Send text, html or both.' },
+              html: { type: 'string', description: 'HTML body.' },
+              fromAddress: {
+                type: 'string',
+                description: 'The primary address or an active alias; the primary when left out.',
+              },
+              fromName: {
+                type: 'string',
+                description: "Sender name; the identity's profile name when left out.",
+              },
+              attachments: {
+                type: 'array',
+                maxItems: 20,
+                description:
+                  'At most 20 files and 10 MB together. Programs and scripts are refused.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    filename: { type: 'string' },
+                    content: { type: 'string', description: 'The file in base64.' },
+                    contentType: { type: 'string' },
+                  },
+                  required: ['filename', 'content'],
+                },
+              },
+              sendAt: {
+                type: 'string',
+                description: 'Send later: an ISO 8601 time up to 30 days ahead.',
+              },
             },
-            required: ['to', 'subject', 'text'],
+            required: ['to', 'subject'],
           },
         },
+        validationMode: { type: 'string', enum: ['strict', 'partial'] },
         idempotencyKey: { type: 'string' },
       },
       required: ['agentId', 'messages'],
@@ -577,6 +657,31 @@ function annotationsForTool(name: string): ToolAnnotations {
   };
 }
 
+const addresses = z.union([z.string(), z.array(z.string()).max(50)]);
+/** One message, as the send tools take it; the API checks every field again. */
+const emailMessageSchema = z.object({
+  to: addresses,
+  cc: addresses.optional(),
+  bcc: addresses.optional(),
+  replyTo: addresses.optional(),
+  subject: z.string(),
+  text: z.string().optional(),
+  html: z.string().optional(),
+  fromAddress: z.string().email().optional(),
+  fromName: z.string().max(100).optional(),
+  attachments: z
+    .array(
+      z.object({
+        filename: z.string(),
+        content: z.string(),
+        contentType: z.string().optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
+  sendAt: z.string().optional(),
+});
+
 const TOOLS: Tool[] = TOOL_DEFINITIONS.map((tool) => ({
   ...tool,
   annotations: annotationsForTool(tool.name),
@@ -689,21 +794,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'send_agent_email': {
-        const a = z
-          .object({
-            agentId: z.string(),
-            to: z.string(),
-            subject: z.string(),
-            text: z.string(),
-            fromAddress: z.string().email().optional(),
-          })
+        const { agentId, idempotencyKey, ...message } = z
+          .object({ agentId: z.string(), idempotencyKey: z.string().max(255).optional() })
+          .merge(emailMessageSchema)
           .parse(args);
-        const result = await client.sendEmail(a.agentId, {
-          to: a.to,
-          fromAddress: a.fromAddress,
-          subject: a.subject,
-          text: a.text,
-        });
+        const result = await client.sendEmail(agentId, { ...message, idempotencyKey });
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
 
@@ -725,21 +820,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const a = z
           .object({
             agentId: z.string(),
-            messages: z
-              .array(
-                z.object({
-                  to: z.string().email(),
-                  subject: z.string(),
-                  text: z.string(),
-                  fromAddress: z.string().email().optional(),
-                }),
-              )
-              .max(100),
-            idempotencyKey: z.string().optional(),
+            messages: z.array(emailMessageSchema).min(1).max(100),
+            validationMode: z.enum(['strict', 'partial']).optional(),
+            idempotencyKey: z.string().max(255).optional(),
           })
           .parse(args);
         const result = await client.sendEmailBatch(a.agentId, {
           messages: a.messages,
+          validationMode: a.validationMode,
           idempotencyKey: a.idempotencyKey,
         });
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };

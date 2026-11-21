@@ -162,30 +162,40 @@ test('empty 204 and text/dns success responses are not passed to a JSON error de
 
 test('normal and partially accepted email envelopes keep their different required fields', () => {
   const schemas = publicSchemas();
-  assert.deepEqual(pick(schemas, 'EmailQueuedResponse', 'required'), ['id', 'status', 'messages']);
+  assert.deepEqual(pick(schemas, 'EmailQueuedResponse', 'required'), [
+    'id',
+    'status',
+    'messageId',
+    'sendAt',
+    'messages',
+    'usage',
+  ]);
   assert.deepEqual(pick(schemas, 'EmailPartialResponse', 'required'), [
     'id',
     'status',
     'code',
+    'message',
     'messages',
     'usage',
   ]);
   assert.deepEqual(pick(schemas, 'EmailBatchQueuedResponse', 'required'), [
-    'batchId',
     'status',
     'jobs',
     'errors',
+    'usage',
   ]);
   assert.deepEqual(pick(schemas, 'EmailBatchPartialResponse', 'required'), [
+    'status',
     'code',
     'message',
     'jobs',
+    'errors',
     'usage',
   ]);
-  const partialRequired = pickArray(schemas, 'EmailBatchPartialResponse', 'required');
-  assert.equal(partialRequired.includes('batchId'), false);
-  assert.equal(partialRequired.includes('status'), false);
-  assert.equal(partialRequired.includes('errors'), false);
+  // Batches are not stored as such: no response promises a batch id.
+  for (const name of ['EmailBatchQueuedResponse', 'EmailBatchPartialResponse']) {
+    assert.equal(pickArray(schemas, name, 'required').includes('batchId'), false);
+  }
   assert.deepEqual(pick(schemas, 'EmailBatchResponse', 'anyOf'), [
     { $ref: '#/components/schemas/EmailBatchQueuedResponse' },
     { $ref: '#/components/schemas/EmailBatchPartialResponse' },

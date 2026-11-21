@@ -199,10 +199,82 @@ export interface AgentRow {
   ownerAddress: Address;
 }
 
+/** One file attached to a message. `content` is the file's bytes in base64. */
+export interface EmailAttachment {
+  filename: string;
+  content: string;
+  /** Inferred from the file name when left out. */
+  contentType?: string;
+}
+
+/** A message to send. Recipients across `to`, `cc` and `bcc` are at most 50. */
+export interface EmailMessageInput {
+  to: string | string[];
+  cc?: string | string[];
+  /** Delivered, but never shown in the message itself. */
+  bcc?: string | string[];
+  replyTo?: string | string[];
+  /** The identity's primary address or an active alias; the primary when left out. */
+  fromAddress?: string;
+  /** The sender name; the identity's profile name when left out. */
+  fromName?: string;
+  subject: string;
+  /** At least one of `text` and `html`. Each at most 2 MB. */
+  text?: string;
+  html?: string;
+  /** At most 20 files and 10 MB together. Programs and scripts are refused. */
+  attachments?: EmailAttachment[];
+  /** Send later, up to 30 days ahead. */
+  sendAt?: string | Date;
+}
+
+/** What happened to one recipient: queued for delivery, or skipped because earlier mail bounced. */
+export interface EmailRecipientResult {
+  id: string;
+  to: string;
+  status: 'queued' | 'suppressed';
+}
+
+export interface EmailAllowance {
+  limit: number;
+  used: number;
+  remaining: number;
+}
+
+/** A queued message. `code` is set when only some recipients were queued (HTTP 202). */
 export interface EmailResult {
   id: string;
-  status: string;
-  messages?: unknown[];
+  status: 'queued' | 'scheduled';
+  messageId: string;
+  sendAt: string;
+  messages: EmailRecipientResult[];
+  usage: EmailAllowance;
+  code?: 'EMAIL_PARTIALLY_QUEUED';
+  message?: string;
+}
+
+export interface EmailBatchError {
+  index: number;
+  code: string;
+  message: string;
+  field: string | null;
+}
+
+/** A queued batch. `code` is set when some messages or recipients were not queued. */
+export interface EmailBatchResult {
+  status: 'queued';
+  jobs: Array<Omit<EmailResult, 'usage' | 'code' | 'message'> & { index: number }>;
+  errors: EmailBatchError[];
+  usage: EmailAllowance;
+  code?: 'BATCH_PARTIALLY_QUEUED';
+  message?: string;
+}
+
+function emailBody(message: EmailMessageInput): EmailMessageInput {
+  return {
+    ...message,
+    ...(message.sendAt instanceof Date ? { sendAt: message.sendAt.toISOString() } : {}),
+  };
 }
 
 export interface EmailUsageResult {
@@ -653,17 +725,15 @@ export class OpenSignet {
     return agents[0] ?? null;
   }
 
+  /**
+   * Queues a message. Send `idempotencyKey` when the call may be retried: within 24 hours the
+   * same key returns the first answer instead of sending again.
+   */
   async sendEmail(
     agentId: string,
-    args: {
-      to: string | string[];
-      subject: string;
-      text: string;
-      fromAddress?: string;
-      replyTo?: string;
-      idempotencyKey?: string;
-    },
+    args: EmailMessageInput & { idempotencyKey?: string },
   ): Promise<EmailResult> {
+    const { idempotencyKey, ...message } = args;
     const url = `${this.apiUrl}/agents/${encodeApiPathSegment(agentId)}/email/send`;
     // Trusted constructor API base; inputs are encoded path/query data, not destination URLs.
     // nosemgrep: nodejs_scan.javascript-ssrf-rule-node_ssrf
@@ -671,28 +741,26 @@ export class OpenSignet {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(args.idempotencyKey ? { 'Idempotency-Key': args.idempotencyKey } : {}),
+        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       },
-      body: JSON.stringify(args),
+      body: JSON.stringify(emailBody(message)),
     });
     if (!res.ok) throw new Error(await responseError(res));
-    return res.json();
+    return res.json() as Promise<EmailResult>;
   }
 
+  /**
+   * Queues up to 100 messages. `strict` (the default) sends nothing when any message is invalid;
+   * `partial` sends the valid ones and reports the others in `errors`.
+   */
   async sendEmailBatch(
     agentId: string,
     args: {
-      messages: Array<{
-        to: string | string[];
-        subject: string;
-        text: string;
-        fromAddress?: string;
-        replyTo?: string;
-      }>;
+      messages: EmailMessageInput[];
       validationMode?: 'strict' | 'partial';
       idempotencyKey?: string;
     },
-  ) {
+  ): Promise<EmailBatchResult> {
     // Trusted constructor API base; inputs are encoded path/query data, not destination URLs.
     // nosemgrep: nodejs_scan.javascript-ssrf-rule-node_ssrf
     const res = await this.signedFetch(
@@ -704,18 +772,13 @@ export class OpenSignet {
           ...(args.idempotencyKey ? { 'Idempotency-Key': args.idempotencyKey } : {}),
         },
         body: JSON.stringify({
-          messages: args.messages,
+          messages: args.messages.map(emailBody),
           validationMode: args.validationMode ?? 'strict',
         }),
       },
     );
     if (!res.ok) throw new Error(await responseError(res));
-    return res.json() as Promise<{
-      batchId: string;
-      status: string;
-      jobs: unknown[];
-      errors: unknown[];
-    }>;
+    return res.json() as Promise<EmailBatchResult>;
   }
 
   async getEmailUsage(agentId: string): Promise<EmailUsageResult> {
