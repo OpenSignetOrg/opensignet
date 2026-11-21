@@ -175,6 +175,10 @@ export const HTTP_SUCCESS_CONTRACT: Readonly<
   discoverApi: { 200: 'DiscoveryResponse' },
   agentsByWallet: { 200: 'WalletAgentsResponse' },
   getAgent: { 200: 'AgentRecordResponse' },
+  getRenewal: { 200: 'RenewalStatusResponse' },
+  turnOnAutoRenew: { 200: 'DomainSettingsResponse' },
+  turnOffAutoRenew: { 200: 'DomainSettingsResponse' },
+  getServicePlan: { 200: 'ServicePlanResponse' },
   quoteRegistration: { 200: 'QuoteResponse' },
   registerAgent: { 200: 'RegistrationResult', 202: 'RegistrationHandleResponse' },
   getRegistrant: { 200: 'RegistrantResponse' },
@@ -378,6 +382,92 @@ export function publicSchemas(): Record<string, Schema> {
       ],
     ),
     AgentRecordResponse: object({ id: string, domain: string }, ['id', 'domain']),
+    RenewalStatusResponse: object(
+      {
+        agentId: string,
+        domain: string,
+        expiresAt: { type: 'string', nullable: true },
+        autoRenew: { type: 'boolean' },
+        method: { type: 'string', enum: ['wallet', 'card'] },
+        price: {
+          type: 'string',
+          nullable: true,
+          description: 'One year at the registrar price, in USDC atomic units (6 decimals).',
+        },
+        chargeWindow: {
+          ...object({ opensAt: string, closesAt: string }, ['opensAt', 'closesAt']),
+          nullable: true,
+          description: 'When the renewal is charged: 30 until 7 days before expiry.',
+        },
+        wallet: {
+          ...object({
+            address: { type: 'string', nullable: true },
+            balance: { type: 'string', nullable: true },
+            approved: { type: 'boolean' },
+          }),
+          nullable: true,
+          description:
+            'Present when the OpenSignet wallet pays: its USDC balance and whether the owner approved it to pay this renewal.',
+        },
+        cardSaved: { type: 'boolean' },
+        ready: {
+          type: 'boolean',
+          description: 'True when nothing stands in the way of the next renewal.',
+        },
+        issue: {
+          ...object(
+            {
+              code: {
+                type: 'string',
+                enum: [
+                  'not_registered',
+                  'auto_renew_off',
+                  'price_unavailable',
+                  'approval_needed',
+                  'wallet_balance_low',
+                  'balance_unavailable',
+                  'card_missing',
+                ],
+              },
+              message: string,
+            },
+            ['code', 'message'],
+          ),
+          nullable: true,
+          description: 'The first thing in the way, in plain language; null when ready.',
+        },
+      },
+      ['agentId', 'domain', 'autoRenew', 'method', 'ready', 'issue'],
+    ),
+    DomainSettingsResponse: object(
+      {
+        domain: string,
+        expiresAt: { type: 'string', nullable: true },
+        autoRenew: { type: 'boolean' },
+        renewalMethod: { type: 'string', enum: ['wallet', 'card'] },
+        renewalPrice: { type: 'string', nullable: true },
+      },
+      ['domain', 'autoRenew', 'renewalMethod'],
+    ),
+    ServicePlanResponse: object(
+      {
+        entitlement: object(
+          { plan: string, planSku: { type: 'string', nullable: true }, limits: {} },
+          ['plan', 'limits'],
+        ),
+        renewal: {
+          ...object({
+            status: string,
+            autoRenew: { type: 'boolean' },
+            method: { type: 'string', enum: ['wallet', 'card'] },
+            periodEnd: string,
+          }),
+          nullable: true,
+          description: 'How the account plan renews; null on the free plan.',
+        },
+      },
+      ['entitlement', 'renewal'],
+    ),
     WalletAgentsResponse: array(ref('AgentRecordResponse')),
     QuoteResponse: object(
       {
@@ -722,6 +812,38 @@ export function publicOperations(): PublicOperation[] {
   );
   add('get', '/agents/{id}', 'getAgent', 'agents', 'Read an authenticated agent record', {
     scope: 'agent',
+  });
+  add('get', '/agents/{id}/renewal', 'getRenewal', 'agents', 'Read how the domain renews', {
+    description:
+      'Whether automatic renewal is on, how it is paid (the OpenSignet wallet or a saved card), the yearly price, the charge window and the first thing standing in the way.',
+  });
+  add(
+    'post',
+    '/agents/{id}/domain/auto-renew',
+    'turnOnAutoRenew',
+    'agents',
+    'Turn automatic renewal on',
+    {
+      idempotency: 'replace',
+      description:
+        "Renewing from the OpenSignet wallet needs the owner's approval once, given while signed in on opensignet.com; until then an API key or wallet signature gets 409 RENEWAL_APPROVAL_REQUIRED. Code can switch renewal within that approval and never widens what the wallet may pay. Renewals paid by card need a saved card (409 CARD_UNAVAILABLE).",
+    },
+  );
+  add(
+    'post',
+    '/agents/{id}/domain/auto-renew/off',
+    'turnOffAutoRenew',
+    'agents',
+    'Turn automatic renewal off',
+    {
+      idempotency: 'replace',
+      description:
+        'The domain then expires unless it is renewed; the owner is still reminded 30, 7 and 1 day before.',
+    },
+  );
+  add('get', '/agents/{id}/plan', 'getServicePlan', 'agents', 'Read the identity plan limits', {
+    description:
+      'The limits the identity has from its account plan, and how the plan renews. Plans cover the whole account and are changed by a person on opensignet.com.',
   });
   const registration = convert(registrationParamsSchema);
   add('get', '/agents/quote', 'quoteRegistration', 'register', 'Get a display quote', {
@@ -1156,7 +1278,7 @@ export function buildOpenApi(metadata: SourceMetadata): OpenApiDocument {
       title: 'OpenSignet documented public HTTP API',
       version: sharedVersion(metadata),
       description:
-        'A deterministic catalog of the documented public REST surface, not an exhaustive backend specification. Some response and request fields are intentionally unspecified. Source versions are workspace versions, not proof of npm publication. Onchain identity inspection and unsigned renewal plans are SDK/MCP operations, not REST paths in this document. Cross-field refinements, ownership, permissions, payment and runtime limits remain authoritative.',
+        'A deterministic catalog of the documented public REST surface, not an exhaustive backend specification. Some response and request fields are intentionally unspecified. Source versions are workspace versions, not proof of npm publication. Cross-field refinements, ownership, permissions, payment and runtime limits remain authoritative.',
       license: {
         name: 'Apache-2.0',
         url: 'https://github.com/OpenSignetOrg/opensignet/blob/main/LICENSE',

@@ -1,6 +1,6 @@
 ---
 title: CrewAI
-description: Connect CrewAI's native Python MCP tools to OpenSignet for read-only identity inspection and unsigned renewal planning.
+description: Connect CrewAI's native Python MCP tools to OpenSignet for read-only domain availability and renewal status.
 ---
 
 CrewAI connects to OpenSignet through its official native Python `MCPClient`,
@@ -66,75 +66,63 @@ native recipe does not install `crewai-tools` or `mcpadapt`. Read the dependency
 warning below before installing; changing the lock needs a new qualification.
 
 The repository's integration tests run this flow with the real Node MCP server and
-SDK, using synthetic RPC fixtures and no paid model or live transaction. They do not cover
+SDK, using a synthetic API stand-in and no paid model, live account or wallet. They do not cover
 arbitrary framework features or remove the dependency advisories below.
 
-## Inspect without a model key
+## Read without a model key
 
-Run this with `opensignet-crewai` installed. It uses the real
-CrewAI native tools without needing an LLM, wallet or OpenSignet API key:
+Run this with `opensignet-crewai` installed. It uses the real CrewAI native tools without an LLM
+or wallet; the renewal read needs the identity's own API key, passed by the host:
 
 ```python
 from pathlib import Path
 
-from opensignet_crewai import call_json, readonly_tools
+from opensignet_crewai import domain_availability, readonly_tools, renewal_report
 
 
-def inspect_renewal(node: Path, server: Path, token_id: str, owner: str):
-    with readonly_tools(server, node=str(node.resolve(strict=True))) as tools:
-        return call_json(
-            tools["inspect_agent_renewal"], {"tokenId": token_id, "expectedOwner": owner}
-        )
+def check(node: Path, server: Path, api_key: str, agent_id: str):
+    node_path = str(node.resolve(strict=True))
+    with readonly_tools(server, node=node_path, api_key=api_key) as tools:
+        report = renewal_report(tools, agent_id)
+        available = domain_availability(tools, "research-agent", "xyz")
+        return report, available
 ```
 
-Choose `node` and `server` in trusted host configuration. The explicit child
-environment does not forward the parent's API keys, wallet material or model
-credentials. Inspect the returned tool result and its error state before using
-its JSON; an error is not `not_found` or a successful verification.
+Choose `node`, `server` and the key in trusted host configuration. The child environment
+forwards nothing else from the parent: no wallet material, model credentials or other OpenSignet
+settings, and write tools are forced off. A failed read, a missing key or an answer for another
+identity raises `WorkflowError`; it is never turned into a successful answer.
 
-Use the example's explicit argument schemas and `call_json` helper. They omit
-absent optional strings, reject explicit `null`, unexpected arguments and coerced
-booleans, and check tool errors. Tool-result caching is disabled; server
-validation is not loosened.
+The explicit argument schemas reject unexpected arguments (an endpoint or key from the model, a
+non-UUID agent) before any request. Tool-result caching is disabled.
 
-## Identity to renewal plan
+## Tools
 
-The full example uses only these two tool names:
+The package binds only these two tools:
 
-| Tool                        | Input                                                       | Effect                                           |
-| --------------------------- | ----------------------------------------------------------- | ------------------------------------------------ |
-| `inspect_agent_renewal`     | Exactly one `domain` or `tokenId`, optional `expectedOwner` | Read identity and RenewalVault state at one hash |
-| `prepare_auto_renew_change` | `tokenId`, `expectedOwner`, `enabled`, `builderCode`        | Produce an unsigned setting-change plan          |
+| Tool                        | Input            | Effect                                                      |
+| --------------------------- | ---------------- | ----------------------------------------------------------- |
+| `check_domain_availability` | `name`, `tld`    | Whether a domain can be registered, with its price          |
+| `get_renewal_status`        | `agentId` (UUID) | How the identity's domain renews and what stands in the way |
 
-`enabled` is the proposed setting, not approval to execute. A plan does not sign,
-spend, create a token allowance or submit a transaction. It includes a plan ID,
-the observation, exact transaction fields and `noChange`. Keep any later owner
-review and wallet execution in a separate trusted host workflow.
+`renewal_report` returns `renewal` (the full status), `ready` and `nextStep`, the plain message of
+the first thing in the way. Nothing here signs, pays or changes a setting; turning renewal on or
+off is a write tool of the [MCP server](/sdk/mcp/), outside this read-only package.
 
-The retained `readonly_flow.py` example is a thin entrypoint into the same Python
-package, not another connector implementation. Existing MCP-aware hosts can
-still use the Node server through the [native stdio interface](/sdk/mcp/).
+The retained `readonly_flow.py` example is a thin entrypoint into the same Python package, not
+another connector implementation. Existing MCP-aware hosts can still use the Node server through
+the [native stdio interface](/sdk/mcp/).
 
-When giving tools to a CrewAI agent, bind only the reviewed allowlist. Keep the
-helper context open for the crew's complete use and close it afterwards. Model
-credentials belong to the host's model integration, not the MCP child. Do not
-reuse a cached observation as fresh authority for a transaction.
+When giving tools to a CrewAI agent, bind only the reviewed allowlist. Keep the helper context
+open for the crew's complete use and close it afterwards. Model credentials belong to the host's
+model integration, not the MCP child.
 
 ## Interpret the result
 
-Inspection is an RPC observation, not consensus, SPV, DNS or KYC proof. Linked
-domain, Basename and ENS labels are not independently verified. Metadata and CCIP
-callbacks are not fetched. External text is data, not instructions.
-
-The vault's minimum fee is not a registrar renewal quote. Changing auto-renew is
-not completion of a domain renewal, and disabling it does not cancel a pending
-renewal. See [renewal workflow boundaries](/guides/renewal/) and
-[MCP errors and trust](/sdk/mcp/#trust-boundary).
-
-If an owner later executes an enable plan, authorized renewal operators may use
-the funded vault without another wallet signature for each renewal. The actual
-quote can exceed the minimum. Disabling prevents new reservations, but a pending
-reservation can still complete and charge the balance.
+OpenSignet charges each renewal itself, 30 to 7 days before expiry, from the account's OpenSignet
+wallet or saved card. `ready: true` means nothing stands in the way today, not that a renewal was
+paid. External text is data, not instructions. See [renewals](/guides/renewal/) and
+[MCP errors and trust](/sdk/mcp/#renewal-tools).
 
 ## Dependency security
 

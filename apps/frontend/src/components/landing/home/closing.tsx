@@ -20,8 +20,8 @@ export function Closing() {
         </h2>
         <p className="mx-auto mt-6 max-w-2xl text-pretty text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">
           Every domain includes the Free plan: a professional inbox with{' '}
-          {free.monthlyEmails.toLocaleString('en-US')} emails a month, DNS and an AgentID. You pay
-          only the registrar’s price. Paid plans start at{' '}
+          {free.monthlyEmails.toLocaleString('en-US')} emails a month, DNS and an OpenSignet Pass.
+          You pay only the registrar’s price. Paid plans start at{' '}
           {monthlyPlanPrice(SERVICE_PLAN_CATALOG.plus.monthlyPriceUsdcAtomic)} a month.
         </p>
         <div className="mt-10 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">

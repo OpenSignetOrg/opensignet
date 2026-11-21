@@ -32,11 +32,10 @@ Protected agent operations accept one of these public authentication methods:
 An API key is limited to its assigned agent. Never place an API key in browser source, a public
 repository, or a URL query string.
 
-An account owns an identity when the identity's AgentID is held by one of the account's wallets
-(its OpenSignet wallet or a wallet linked to it), or when the account registered it. A signed-in
-session that does not own the identity receives `403` or `404`, never the identity's private
-settings. Vault deposits, withdrawals and automatic-renewal changes remain onchain transactions
-signed by a wallet.
+An account owns the identities it registers; each identity's OpenSignet Pass is held by the
+account's OpenSignet wallet. A signed-in session that does not own the identity receives `403` or
+`404`, never the identity's private settings. Renewals are charged by OpenSignet from the
+account's OpenSignet wallet or saved card; see [renewals](/guides/renewal/).
 
 ### Wallet request signatures
 

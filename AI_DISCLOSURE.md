@@ -20,7 +20,7 @@ The assisted public areas include:
 
 - Resumable registration, payment-state handling and recovery without automatic
   repeat payment after an uncertain outcome.
-- Read-only identity and renewal inspection, plus unsigned auto-renew planning.
+- Renewal status and the automatic-renewal switch for code.
   Wallet execution requires a separate host-provided human approval callback.
 - SDK, MCP, LangChain, CrewAI and AutoGen interfaces and their tests.
 - Machine-readable documentation generated from reviewed public sources.

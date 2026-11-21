@@ -16,8 +16,7 @@ npm install @opensignet/agentkit-plugin@0.1.0 @coinbase/agentkit
 import { OpenSignetActionProvider } from '@opensignet/agentkit-plugin';
 
 const opensignet = new OpenSignetActionProvider({
-  builderCode: process.env.OPENSIGNET_BUILDER_CODE,
-  renewalVaultAddress: process.env.RENEWAL_VAULT_ADDRESS,
+  apiKey: process.env.OPENSIGNET_API_KEY,
 });
 
 const actions = opensignet.getActions();
@@ -38,15 +37,17 @@ The provider exposes actions for:
 - Agent identity registration and quote
 - Email send/list/batch, monthly usage, signed inbound webhooks, primary address updates, and Plus/Pro/Max/Enterprise aliases
 - Typed DNS list/create/update/delete for all 13 supported types, plus capabilities, batch preview/apply, and BIND import/export
-- RenewalVault status, funding, auto-renew, and withdrawal
+- Domain renewal status, and automatic renewal on or off
 - Plan status (plans cover the whole account and are bought on opensignet.com)
 
 ## Credentials and transaction safety
 
-`builderCode` is required only for direct Base writes such as auto-renew and
-vault withdrawal. Missing or invalid attribution stops those actions before
-`walletProvider.sendTransaction`; reads, signatures, and x402 v2 paid requests
-keep their existing behavior.
+Renewals are charged by OpenSignet when they fall due, from the account's
+OpenSignet wallet or its saved card; no action sends a wallet transaction for
+them. Renewing from the OpenSignet wallet needs the owner's approval once, on
+opensignet.com; until then `set_auto_renew` with `enabled: true` reports
+`RENEWAL_APPROVAL_REQUIRED`. Code switches renewal within that approval and can
+never widen what the wallet may pay.
 
 Use a dedicated wallet with only the authority and funds required by the agent.
 If `apiKey` is used for scoped operations, inject it through a trusted secret

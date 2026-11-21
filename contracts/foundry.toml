@@ -12,7 +12,7 @@ via_ir = false
 evm_version = "cancun"
 verbosity = 2
 fs_permissions = [{ access = "read", path = "./" }]
-gas_reports = ["AgentIdentityRegistry", "PaymentRouter", "RenewalVault"]
+gas_reports = ["OpenSignetPass"]
 
 [profile.default.fuzz]
 runs = 256

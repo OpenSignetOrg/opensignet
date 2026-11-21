@@ -122,9 +122,6 @@ importers:
       '@walletconnect/ethereum-provider':
         specifier: 2.21.8
         version: 2.21.8(@types/react@19.2.18)(aws4fetch@1.0.20)(react@19.2.8)(typescript@5.9.3)(zod@4.6.7)
-      '@x402/extensions':
-        specifier: 2.25.0
-        version: 2.25.0(ethers@6.17.0)(typescript@5.9.3)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

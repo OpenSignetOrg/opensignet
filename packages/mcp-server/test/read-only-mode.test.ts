@@ -19,11 +19,9 @@ const readOnlyTools = [
   'get_dns_capabilities',
   'get_renewal_status',
   'get_service_plan',
-  'inspect_agent_renewal',
   'list_agent_email',
   'list_dns_records',
   'lookup_agent',
-  'prepare_auto_renew_change',
   'quote_registration',
 ];
 
@@ -40,13 +38,11 @@ const destructiveWriteTools = [
   'delete_agent_email',
   'delete_dns_record',
   'delete_email_alias',
-  'enable_auto_renew',
-  'fund_renewal_vault',
   'import_dns_zone',
   'register_agent_identity',
+  'set_auto_renew',
   'update_dns_record',
   'update_primary_email',
-  'withdraw_renewal_vault',
 ];
 
 afterEach(async () => {

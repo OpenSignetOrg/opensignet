@@ -125,83 +125,61 @@ test('inspection docs pin 0.1.0, state it is unpublished and keep the source cat
   assert.match(mcp, /node packages\/mcp-server\/dist\/index\.js/);
 });
 
-test('both interfaces document public read-only provenance and explicit trust limits', async () => {
-  for (const name of ['typescript', 'mcp']) {
-    const source = await doc(name);
-    for (const term of [
-      'RPC',
-      'consensus',
-      'SPV',
-      'DNS',
-      'KYC',
-      'ERC-721',
-      'ERC-8004',
-      'safe',
-      'rate limited',
-      'EIP-1898',
-      'requireCanonical: true',
-    ]) {
-      assert.ok(source.includes(term), `${name}: missing ${term}`);
-    }
-    assert.match(source, /not instructions|rather than instructions/);
-    assert.match(source, /never fetches metadata|without being\s+fetched/);
-    assert.match(source, /INVALID_INPUT/);
-    assert.match(source, /WRONG_CHAIN/);
-    assert.match(source, /UNSAFE_SNAPSHOT/);
-    assert.match(source, /UNAVAILABLE/);
-    assert.match(source, /expectedOwnerMatches/);
+test('both interfaces document renewal from code within the owner approval', async () => {
+  const sdk = await doc('typescript');
+  const mcp = await doc('mcp');
+  assert.match(sdk, /getRenewal\(agentId\)/);
+  assert.match(sdk, /setAutoRenew\(agentId, false\)/);
+  assert.match(mcp, /`get_renewal_status`/);
+  assert.match(mcp, /`set_auto_renew`/);
+  for (const source of [sdk, mcp]) {
+    assert.match(source, /RENEWAL_APPROVAL_REQUIRED/);
+    assert.match(source, /never widens what the wallet may pay/);
+    assert.match(source, /30 to\s+7 days before/);
+    for (const retired of [
+      'inspectAgentRenewal',
+      'prepareAutoRenewChange',
+      'RenewalVault',
+      'renewalVaultAddress',
+      'builderCode',
+      'inspect_agent_renewal',
+      'fund_renewal_vault',
+    ])
+      assert.ok(!source.includes(retired), `retired surface still documented: ${retired}`);
   }
 });
 
-test('SDK documentation does not conflate expected owner, activity and internal consistency', async () => {
-  const source = await doc('typescript');
-  assert.match(source, /does not include `expectedOwnerMatches`/);
-  assert.match(source, /does not establish\s+agent safety or endorse its behavior/);
-  assert.match(source, /not `not_found`/);
-  assert.match(source, /manually choose and inject a trusted Base RPC client/);
-  assert.match(source, /ccipRead: false/);
-  assert.match(source, /before any\s+RPC request/);
-  assert.match(source, /no numeric-block or\s+`latest` fallback/);
-  assert.doesNotMatch(source, /uses that block number for the contract calls/);
-});
-
-test('MCP documents no caller-selected RPC, registry or network and no platform authentication', async () => {
-  const source = await doc('mcp');
-  assert.match(source, /without constructing an authenticated platform client/);
-  assert.match(source, /does not switch chains/);
-  assert.match(source, /network overrides are not accepted as tool arguments/);
-  assert.match(source, /No wallet, platform API key or write-tool opt-in/);
-});
-
-test('renewal docs separate unsigned plans, future spending authority and actual completion', async () => {
+test('the renewal guide documents the API, the issue codes and the approval boundary', async () => {
   const source = await readFile(
     new URL('../src/content/docs/guides/renewal.mdx', import.meta.url),
     'utf8',
   );
-  for (const name of [
-    'inspectAgentRenewal',
-    'prepareAutoRenewChange',
-    'executeAutoRenewChange',
-    'confirmAutoRenewChange',
+  for (const route of [
+    'GET /api/v1/agents/:id/renewal',
+    'POST /api/v1/agents/:id/domain/auto-renew',
+    'POST /api/v1/agents/:id/domain/auto-renew/off',
   ])
-    assert.ok(source.includes(name));
-  assert.match(source, /not a registrar\s+quote/);
-  assert.match(source, /without a new wallet signature for each renewal/);
-  assert.match(source, /existing\s+pending reservation may still complete and charge/);
-  assert.match(source, /model-supplied boolean or unconditional approval/);
-  assert.match(source, /limited\s+to the same plan object/);
-  assert.match(source, /settled `no_change` result is not retained/);
-  assert.match(source, /requires a new host approval if a change is now needed/);
-  assert.match(source, /receipt to be after the plan's recorded safe observation block/);
-  assert.match(source, /not cryptographic proof that a\s+particular human approved/);
-  assert.match(source, /not\*\*\s+that the domain/);
-  assert.match(source, /network gas/);
+    assert.ok(source.includes(route), `missing ${route}`);
+  for (const code of [
+    'not_registered',
+    'auto_renew_off',
+    'price_unavailable',
+    'approval_needed',
+    'wallet_balance_low',
+    'balance_unavailable',
+    'card_missing',
+  ])
+    assert.ok(source.includes(`\`${code}\``), `missing issue code ${code}`);
+  assert.match(source, /approves once, while signed in on opensignet\.com/);
+  assert.match(source, /reminded 30, 7 and 1 day/);
+  assert.match(source, /Code can\s+never widen what the wallet may pay/);
+  assert.doesNotMatch(source, /RenewalVault|vault balance|builder code/i);
 });
 
 test('general AI disclosure retains assisted workflows without event or internal-role claims', async () => {
   const ai = await readFile(new URL('../../../AI_DISCLOSURE.md', import.meta.url), 'utf8');
   assert.match(ai, /Resumable registration, payment-state handling and recovery/);
-  assert.match(ai, /Read-only identity and renewal inspection/);
+  assert.match(ai, /Renewal status and the automatic-renewal switch for code/);
   assert.doesNotMatch(
     ai,
     /ETHOnline|ETHGlobal|hackathon|coordinating implementation|frontend owner|parent handles|\bFermat\b/i,

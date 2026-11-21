@@ -85,10 +85,22 @@ test('frontend has no business API, private implementation, admin or docs source
   const handlers = sourceFiles(resolve(root, 'src/app')).filter((file) =>
     file.endsWith('route.ts'),
   );
-  assert.deepEqual(
-    handlers.map((file) => relative(root, file).replaceAll('\\', '/')),
-    ['src/app/search-index.json/route.ts'],
-  );
+  assert.deepEqual(handlers.map((file) => relative(root, file).replaceAll('\\', '/')).sort(), [
+    'src/app/pass/[id]/image/route.ts',
+    'src/app/pass/[id]/route.ts',
+    'src/app/search-index.json/route.ts',
+  ]);
+  // The OpenSignet Pass routes serve a token's public metadata and artwork (the pass is public
+  // onchain): GET only, from the public API host, without the visitor's cookies or credentials.
+  for (const file of ['src/app/pass/[id]/route.ts', 'src/app/pass/[id]/image/route.ts']) {
+    const route = readFileSync(resolve(root, file), 'utf8');
+    assert.match(route, /export async function GET\(/);
+    assert.doesNotMatch(route, /export async function (?:POST|PUT|PATCH|DELETE)/);
+    assert.doesNotMatch(route, /cookies|headers\(\)|authorization|process\.env/i);
+  }
+  const pass = readFileSync(resolve(root, 'src/lib/pass.ts'), 'utf8');
+  assert.match(pass, /'https:\/\/api\.opensignet\.com'/);
+  assert.doesNotMatch(pass, /cookie|authorization|credentials/i);
   // The site-search index is static public page text: no backend client, request data or secrets.
   const searchIndex = readFileSync(resolve(root, 'src/app/search-index.json/route.ts'), 'utf8');
   assert.match(searchIndex, /export const dynamic = 'force-static'/);
@@ -197,7 +209,7 @@ test('Next config keeps only asset redirects while request routing owns host and
   assert.match(middleware, /'\/api\/:path\*'/);
   assert.match(middleware, /'\/docs\/:path\*'/);
   const headers = await config.headers();
-  assert.equal(headers.length, 3);
+  assert.equal(headers.length, 4);
   const [security] = headers;
   assert.ok(security);
   const values: Record<string, string> = Object.fromEntries(
@@ -215,7 +227,17 @@ test('Next config keeps only asset redirects while request routing owns host and
     source: '/favicon.ico',
     headers: [{ key: 'Content-Type', value: 'image/x-icon' }],
   });
+  // Pass artwork is an SVG opened on its own: it may draw inline styles and nothing else.
   assert.deepEqual(headers[2], {
+    source: '/pass/:id/image',
+    headers: [
+      {
+        key: 'Content-Security-Policy',
+        value: "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+      },
+    ],
+  });
+  assert.deepEqual(headers[3], {
     source: '/:path*',
     has: [
       {

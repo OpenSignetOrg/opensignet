@@ -64,22 +64,13 @@ test('machine docs are deterministic, source-derived and valid OpenAPI without e
   assert.ok(result.operations >= 30);
   const source = parseIndex(first['api-index.json']).source;
   const tools = parseIndex(first['api-index.json']).mcp.tools;
-  const prepare = tools.find((tool) => tool.name === 'prepare_auto_renew_change');
-  assert.ok(prepare);
-  assert.deepEqual(pick(prepare.inputSchema, 'required'), [
-    'tokenId',
-    'expectedOwner',
-    'enabled',
-    'builderCode',
-  ]);
-  assert.equal(pick(prepare.inputSchema, 'additionalProperties'), false);
-  assert.equal(pick(prepare.inputSchema, 'properties', 'enabled', 'type'), 'boolean');
-  const renewal = tools.find((tool) => tool.name === 'inspect_agent_renewal');
+  const change = tools.find((tool) => tool.name === 'set_auto_renew');
+  assert.ok(change);
+  assert.deepEqual(pick(change.inputSchema, 'required'), ['agentId', 'enabled']);
+  assert.equal(pick(change.inputSchema, 'properties', 'enabled', 'type'), 'boolean');
+  const renewal = tools.find((tool) => tool.name === 'get_renewal_status');
   assert.ok(renewal);
-  assert.deepEqual(pick(renewal.inputSchema, 'oneOf'), [
-    { required: ['domain'] },
-    { required: ['tokenId'] },
-  ]);
+  assert.deepEqual(pick(renewal.inputSchema, 'required'), ['agentId']);
   for (const pkg of source.packages) {
     const manifest = await readFile(join(DOCS_ROOT, '..', '..', pkg.manifest), 'utf8');
     const actual: { version: string } =
@@ -150,7 +141,7 @@ test('documented route extraction canonicalizes only real HTTP paths', () => {
   const routes = documentedHttpRoutes([
     {
       file: 'api-reference/agents.mdx',
-      body: 'GET /api/v1/agents/:id\nGET /api/v1/agents/quote?domain=one\ninspectAgentRenewal({ tokenId: "1" })',
+      body: 'GET /api/v1/agents/:id\nGET /api/v1/agents/quote?domain=one\ngetRenewal(agentId)',
     },
   ]);
   assert.deepEqual([...routes], ['get /api/v1/agents/{id}', 'get /api/v1/agents/quote']);

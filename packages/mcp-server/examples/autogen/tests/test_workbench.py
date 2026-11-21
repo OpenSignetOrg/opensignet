@@ -1,4 +1,4 @@
-"""Real AutoGen + real Node MCP/OpenSignet SDK; every RPC observation is synthetic."""
+"""Real AutoGen + real Node MCP/OpenSignet SDK; every API answer is synthetic."""
 # The standalone test script must add its trusted example directory before imports.
 # ruff: noqa: E402
 
@@ -16,17 +16,20 @@ from unittest.mock import patch
 
 EXAMPLE = Path(__file__).resolve().parents[1]
 ROOT = Path(__file__).resolve().parents[5]
-VERSION = tomllib.loads((ROOT / "packages/autogen-plugin/pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+VERSION = tomllib.loads(
+    (ROOT / "packages/autogen-plugin/pyproject.toml").read_text(encoding="utf-8")
+)["project"]["version"]
 sys.path.insert(0, str(EXAMPLE))
 
 from opensignet_workbench import (
     SYSTEM_ENV_KEYS,
     TOOL_NAMES,
+    AgentInput,
+    AvailabilityInput,
     OpenSignetWorkbench,
-    IdentityInput,
-    PrepareInput,
-    inspect_and_prepare,
+    domain_availability,
     minimal_child_environment,
+    renewal_report,
     result_json,
     server_parameters,
 )
@@ -36,23 +39,25 @@ from autogen_core.models import CreateResult, RequestUsage
 from autogen_ext.models.replay import ReplayChatCompletionClient
 from autogen_ext.tools.mcp import McpWorkbench
 
-OWNER = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+AGENT = "11111111-1111-4111-8111-111111111111"
+KEY = "osk_" + "fixture".ljust(43, "0")
 NODE = Path(os.environ["OPENSIGNET_AUTOGEN_NODE"]).resolve()
 MCP_VERSION = json.loads((ROOT / "packages/mcp-server/package.json").read_text())[
     "version"
 ]
+CHILD_KEYS = SYSTEM_ENV_KEYS | {"OPENSIGNET_ENABLE_WRITE_TOOLS", "OPENSIGNET_API_KEY"}
 
 
-def workbench(mode: str = "found") -> OpenSignetWorkbench:
-    params = server_parameters(NODE, source_checkout=ROOT)
+def workbench(mode: str = "ready", api_key: str | None = KEY) -> OpenSignetWorkbench:
+    params = server_parameters(NODE, source_checkout=ROOT, api_key=api_key)
     params = params.model_copy(
         update={
             "args": [
                 "--import",
-                (ROOT / "packages/mcp-server/test/autogen-rpc.ts").as_uri(),
+                (ROOT / "packages/mcp-server/test/autogen-fixture.ts").as_uri(),
                 *params.args,
             ],
-            "env": {**params.env, "AUTOGEN_FIXTURE_MODE": mode},
+            "env": {**params.env, "OPENSIGNET_FIXTURE_MODE": mode},
         }
     )
     return OpenSignetWorkbench(params)
@@ -64,9 +69,7 @@ class InputAndEnvironmentTests(unittest.TestCase):
         implementation = Path(inspect.getfile(OpenSignetWorkbench)).resolve()
         self.assertTrue(implementation.is_relative_to(Path(sys.prefix).resolve()))
         self.assertNotIn("packages/autogen-plugin/src", implementation.as_posix())
-        self.assertEqual(
-            OpenSignetWorkbench.__module__, "opensignet_autogen.workbench"
-        )
+        self.assertEqual(OpenSignetWorkbench.__module__, "opensignet_autogen.workbench")
 
     def test_minimal_environment_is_allowlisted_not_a_copy_of_ambient_secrets(self):
         ambient = {
@@ -89,39 +92,37 @@ class InputAndEnvironmentTests(unittest.TestCase):
             PATH="untrusted-search-path", SYSTEMROOT=os.environ.get("SYSTEMROOT", "")
         )
         env = minimal_child_environment(NODE, ambient)
-        self.assertTrue(set(env).issubset(SYSTEM_ENV_KEYS))
-        self.assertFalse(set(env) & (set(ambient) - SYSTEM_ENV_KEYS))
+        self.assertTrue(set(env).issubset(CHILD_KEYS))
+        self.assertNotIn("OPENSIGNET_API_KEY", env)
+        self.assertEqual(env["OPENSIGNET_ENABLE_WRITE_TOOLS"], "false")
         self.assertNotIn("untrusted-search-path", env["PATH"])
 
-    def test_closed_inputs_reject_injected_config_and_boolean_approval(
-        self,
-    ):
+    def test_only_a_host_passed_identity_key_reaches_the_child(self):
+        self.assertEqual(
+            minimal_child_environment(NODE, {}, KEY)["OPENSIGNET_API_KEY"], KEY
+        )
+        for value in ("synthetic-do-not-forward", "osk_short", KEY + "x", ""):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                minimal_child_environment(NODE, {}, value)
+
+    def test_closed_inputs_reject_injected_config(self):
+        self.assertEqual(AgentInput.model_validate({"agentId": AGENT}).agentId, AGENT)
         for value in (
             {},
-            {"domain": "reader.xyz", "tokenId": "7"},
-            {"tokenId": 7},
-            {"tokenId": "07"},
-            {"domain": "https://reader.xyz"},
-            {"tokenId": "7", "rpcUrl": "https://invalid.test"},
-            {"tokenId": "7", "privateKey": "forbidden"},
+            {"agentId": "../../keys"},
+            {"agentId": AGENT, "apiUrl": "https://invalid.test"},
+            {"agentId": AGENT, "apiKey": KEY},
         ):
-            with self.assertRaises(ValueError):
-                IdentityInput.model_validate(value)
-        valid = dict(
-            tokenId="7",
-            expectedOwner=OWNER,
-            enabled=True,
-            builderCode="synthetic_autogen",
-        )
-        self.assertEqual(PrepareInput.model_validate(valid).enabled, True)
-        for delta in (
-            {"enabled": "true"},
-            {"enabled": 1},
-            {"approved": True},
-            {"builderCode": "UPPER"},
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                AgentInput.model_validate(value)
+        for value in (
+            {"name": "reader"},
+            {"name": "Reader", "tld": "xyz"},
+            {"name": "reader.xyz", "tld": "xyz"},
+            {"name": "reader", "tld": "xyz", "privateKey": "forbidden"},
         ):
-            with self.assertRaises(ValueError):
-                PrepareInput.model_validate({**valid, **delta})
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                AvailabilityInput.model_validate(value)
 
     def test_launcher_requires_trusted_built_package_and_no_model_command(self):
         params = server_parameters(NODE, source_checkout=ROOT)
@@ -130,7 +131,7 @@ class InputAndEnvironmentTests(unittest.TestCase):
             params.args, [str((ROOT / "packages/mcp-server/dist/index.js").resolve())]
         )
         self.assertNotIn("AGENT_PRIVATE_KEY", params.env)
-        self.assertNotIn("OPENSIGNET_ENABLE_WRITE_TOOLS", params.env)
+        self.assertEqual(params.env["OPENSIGNET_ENABLE_WRITE_TOOLS"], "false")
         with self.assertRaises(ValueError):
             server_parameters(NODE)
         with self.assertRaises(ValueError):
@@ -143,9 +144,7 @@ class InputAndEnvironmentTests(unittest.TestCase):
 
 
 class RealWorkbenchTests(unittest.IsolatedAsyncioTestCase):
-    async def test_real_workbench_calls_identity_without_ambient_keys(
-        self,
-    ):
+    async def test_real_workbench_reads_renewal_with_only_the_passed_key(self):
         with patch.dict(
             os.environ,
             {
@@ -164,50 +163,51 @@ class RealWorkbenchTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     tools.initialize_result.serverInfo.version, MCP_VERSION
                 )
-                self.assertIn("inspect_agent_renewal", names)
-                self.assertNotIn("inspect_agent_identity", names)
-                self.assertTrue(names.issubset(TOOL_NAMES))
-                result = result_json(
-                    await tools.call_tool(
-                        "inspect_agent_renewal",
-                        {"tokenId": "7", "expectedOwner": OWNER},
-                    )
-                )
-                self.assertEqual(result["status"], "found")
-                identity = result["identity"]
-                self.assertEqual(identity["block"]["tag"], "safe")
-                self.assertEqual(identity["block"]["hash"], "0x" + "ab" * 32)
-                self.assertEqual(identity["checks"]["expectedOwnerMatches"], True)
+                self.assertEqual(names, set(TOOL_NAMES))
+                report = await renewal_report(tools, AGENT)
+                self.assertEqual(report["mode"], "read_only")
+                self.assertTrue(report["ready"])
+                self.assertIsNone(report["nextStep"])
+                self.assertEqual(report["renewal"]["price"], "10440000")
+                available = await domain_availability(tools, "reader", "xyz")
+                self.assertTrue(available["available"])
 
-    async def test_mutating_and_configuration_tools_are_denied_before_server_call(self):
+    async def test_writes_and_configuration_are_denied_before_the_server(self):
         async with workbench() as tools:
             for name in (
-                "enable_auto_renew",
-                "fund_renewal_vault",
-                "register_agent",
-                "execute_auto_renew_change",
+                "set_auto_renew",
+                "register_agent_identity",
+                "send_agent_email",
                 "run_shell",
             ):
-                result = await tools.call_tool(name, {"approved": True})
+                result = await tools.call_tool(
+                    name, {"agentId": AGENT, "enabled": False}
+                )
                 self.assertTrue(result.is_error)
                 self.assertIn("READ_ONLY_TOOL_DENIED", result.to_text())
             invalid = await tools.call_tool(
-                "inspect_agent_renewal",
-                {"tokenId": "7", "rpcUrl": "https://foreign.invalid"},
+                "get_renewal_status",
+                {"agentId": AGENT, "apiUrl": "https://foreign.invalid"},
             )
             self.assertTrue(invalid.is_error)
             self.assertIn("INVALID_INPUT", invalid.to_text())
 
-    async def test_missing_identity_and_rpc_failure_are_not_fabricated_success(self):
-        async with workbench("not-found") as tools:
-            result = result_json(
-                await tools.call_tool(
-                    "inspect_agent_renewal", {"domain": "reader.xyz"}
-                )
+    async def test_trouble_missing_keys_and_failures_are_not_fabricated_success(self):
+        async with workbench("not-ready") as tools:
+            report = await renewal_report(tools, AGENT)
+            self.assertFalse(report["ready"])
+            self.assertTrue(report["nextStep"].startswith("The OpenSignet wallet"))
+        async with workbench("other-agent") as tools:
+            with self.assertRaises(RuntimeError):
+                await renewal_report(tools, AGENT)
+        async with workbench(api_key=None) as tools:
+            result = await tools.call_tool("get_renewal_status", {"agentId": AGENT})
+            self.assertTrue(result.is_error)
+            self.assertTrue(
+                (await domain_availability(tools, "reader", "xyz"))["available"]
             )
-            self.assertEqual(result["status"], "not_found")
-        async with workbench("rpc-error") as tools:
-            result = await tools.call_tool("inspect_agent_renewal", {"tokenId": "7"})
+        async with workbench("api-error") as tools:
+            result = await tools.call_tool("get_renewal_status", {"agentId": AGENT})
             self.assertTrue(result.is_error)
             with self.assertRaises(RuntimeError):
                 result_json(result)
@@ -216,16 +216,8 @@ class RealWorkbenchTests(unittest.IsolatedAsyncioTestCase):
         self,
     ):
         requests = [
-            ("inspect_agent_renewal", {"tokenId": "7", "expectedOwner": OWNER}),
-            (
-                "prepare_auto_renew_change",
-                {
-                    "tokenId": "7",
-                    "expectedOwner": OWNER,
-                    "enabled": True,
-                    "builderCode": "synthetic_autogen",
-                },
-            ),
+            ("get_renewal_status", {"agentId": AGENT}),
+            ("check_domain_availability", {"name": "reader", "tld": "xyz"}),
         ]
         model = ReplayChatCompletionClient(
             [
@@ -243,15 +235,20 @@ class RealWorkbenchTests(unittest.IsolatedAsyncioTestCase):
                 )
                 for index, (name, arguments) in enumerate(requests)
             ]
+            + [
+                CreateResult(
+                    finish_reason="stop",
+                    content="reader.xyz renews automatically; nothing stands in the way.",
+                    usage=RequestUsage(prompt_tokens=0, completion_tokens=0),
+                    cached=False,
+                )
+            ]
         )
         try:
             async with workbench() as tools:
                 agent = create_assistant(model, tools)
                 result = await agent.run(
-                    task=(
-                        "Inspect synthetic token 7 and prepare only an unsigned "
-                        "setting proposal for separate owner review."
-                    )
+                    task="Check whether synthetic identity's domain keeps renewing."
                 )
                 executions = [
                     message
@@ -266,57 +263,17 @@ class RealWorkbenchTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(
                     all(not event.content[0].is_error for event in executions)
                 )
-                plan = json.loads(result.messages[-1].content)
-                self.assertEqual(plan["kind"], "set_auto_renew")
-                self.assertEqual(plan["transaction"]["value"], "0")
+                answers = [json.loads(event.content[0].content) for event in executions]
+                self.assertTrue(answers[0]["ready"])
+                self.assertTrue(answers[1]["available"])
+                self.assertIn("renews automatically", result.messages[-1].content)
         finally:
             await model.close()
-
-    async def test_full_readonly_renewal_workflow_prepares_only_unsigned_owner_review(
-        self,
-    ):
-        async with workbench() as tools:
-            report = await inspect_and_prepare(
-                tools,
-                {"domain": "reader.xyz", "expectedOwner": OWNER},
-                enabled=True,
-                builder_code="synthetic_autogen",
-            )
-            self.assertEqual(report["mode"], "read_only")
-            self.assertEqual(report["identity"]["status"], "found")
-            self.assertIn("renewal", report)
-            self.assertEqual(
-                report["renewal"]["vault"]["minimumFeeAtomicUsdc"], "7000000"
-            )
-            self.assertEqual(
-                report["renewal"]["renewalExecution"],
-                "keeper_registrar_confirmation_required",
-            )
-            self.assertEqual(report["ownerReview"]["required"], True)
-            plan = report["ownerReview"]["plan"]
-            self.assertEqual(plan["kind"], "set_auto_renew")
-            self.assertEqual(plan["transaction"]["value"], "0")
-            self.assertEqual(plan["expectedOwner"].lower(), OWNER)
-            self.assertEqual(plan["builderCode"], "synthetic_autogen")
-            self.assertFalse(any(report["effects"].values()))
-
-    async def test_expected_owner_mismatch_cannot_produce_a_prepared_change(self):
-        async with workbench() as tools:
-            with self.assertRaises(RuntimeError):
-                await inspect_and_prepare(
-                    tools,
-                    {
-                        "tokenId": "7",
-                        "expectedOwner": "0x1111111111111111111111111111111111111111",
-                    },
-                    enabled=True,
-                    builder_code="synthetic_autogen",
-                )
 
 
 if __name__ == "__main__":
     print(
-        "AutoGen integration checks: SYNTHETIC RPC observations, "
-        "no paid LLM or live transaction."
+        "AutoGen integration checks: SYNTHETIC API answers, "
+        "no paid LLM or live account."
     )
     unittest.main(verbosity=2)

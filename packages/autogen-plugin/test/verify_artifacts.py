@@ -16,7 +16,9 @@ from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+    "project"
+]["version"]
 STEM = f"opensignet_autogen-{VERSION}"
 FRAMEWORK_DEPENDENCIES = {
     "autogen-agentchat==0.7.5",

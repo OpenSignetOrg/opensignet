@@ -31,22 +31,26 @@ from pathlib import Path
 
 from opensignet_autogen import (
     OpenSignetWorkbench,
-    inspect_and_prepare,
+    domain_availability,
+    renewal_report,
     server_parameters,
 )
 
 
-async def inspect():
+async def check(api_key: str):
+    # api_key is the identity's own key, from your secret store.
     params = server_parameters(
         Path("/absolute/path/to/node"),
         installed_package=Path("/trusted/node_modules/@opensignet/mcp-server"),
+        api_key=api_key,
     )
     async with OpenSignetWorkbench(params) as tools:
-        report = await inspect_and_prepare(tools, {"domain": "your-domain.xyz"})
-        print(report)
+        print(await domain_availability(tools, "your-domain", "xyz"))
+        report = await renewal_report(tools, "11111111-1111-4111-8111-111111111111")
+        print(report["ready"], report["nextStep"])
 
 
-asyncio.run(inspect())
+asyncio.run(check(api_key))
 ```
 
 Both paths must be configured by the trusted application owner, never by a model
@@ -61,54 +65,51 @@ The console command and `python -m opensignet_autogen` accept the same arguments
 opensignet-autogen --node /absolute/path/to/node \
   --installed-package /trusted/node_modules/@opensignet/mcp-server \
   --domain your-domain.xyz
+OPENSIGNET_API_KEY=osk_... opensignet-autogen --node /absolute/path/to/node \
+  --installed-package /trusted/node_modules/@opensignet/mcp-server \
+  --agent-id 11111111-1111-4111-8111-111111111111
 ```
 
-Use a domain XOR decimal token ID. An optional `--expected-owner 0x...` compares
-an address; it is not authentication. `--prepare-enable` or `--prepare-disable`
-also requires an expected owner and `--builder-code`, and returns an unsigned
-setting plan for separate owner review. It does not execute that plan.
-
-The importable `inspect_and_prepare` function accepts `enabled=True/False` and
-`builder_code="your_registered_code"` for that same optional preparation step.
+`renewal_report` returns `renewal` (the full status), `ready`, and `nextStep`:
+the plain message of the first thing in the way, or null. A failed read, a
+missing key or an answer for another identity raises and confirms nothing.
+`--api-key-env NAME` reads the identity's key from another variable.
 
 ## Policy And Trust Boundary
 
 Only these MCP tools are discoverable and callable:
 
-- `inspect_agent_renewal`
-- `prepare_auto_renew_change`
+- `check_domain_availability`
+- `get_renewal_status`
 
 The workbench validates closed argument schemas before calling the actual MCP
-server. Arbitrary RPC/chain/registry/command/key/approval fields and execution
-tools are rejected. Arguments are limited to 16 KiB, parsed JSON results to
+server. Endpoint, key, command and approval fields, write tools and anything
+else are rejected. Arguments are limited to 16 KiB, parsed JSON results to
 1 MiB, and stdio reads to 30 seconds. The trusted package manifest is limited
-to 64 KiB. Token IDs must be positive uint256 decimal strings, domains at most
-253 characters, and builder codes 1-32 lowercase letters, digits or underscores.
+to 64 KiB. Agent IDs must be UUIDs; a domain is a lowercase label and TLD.
 
-The child receives an OS-variable allowlist and a minimal PATH. Wallet keys,
-OpenSignet API keys, write flags, model/provider configuration, cloud/proxy
-credentials and `NODE_OPTIONS` are not forwarded. Python MCP's inherited OS
-variables are accounted for by the pinned client version. This is not an OS
-sandbox: the configured executable and installed dependencies must be trusted.
+The child receives an OS-variable allowlist, a minimal PATH, the read-only flag
+and, only when the host passes it, the identity's API key (it must look like an
+OpenSignet key). Wallet keys, ambient OpenSignet settings, model/provider
+configuration, cloud/proxy credentials and `NODE_OPTIONS` are not forwarded.
+Python MCP's inherited OS variables are accounted for by the pinned client
+version. This is not an OS sandbox: the configured executable and installed
+dependencies must be trusted.
 
-An expected-owner match, model statement or approval boolean cannot authorize
-a transaction. Minimum fees are not registrar quotes. Setting preparation does
-not fund a vault, spend, sign, approve, broadcast or complete a domain renewal.
-A separate trusted wallet host owns actual human approval and SDK execution.
-Enabling there may allow later authorized renewal spending from funded balances;
-disabling does not cancel an existing reservation.
-
-RPC observations are not consensus proofs, DNS verification or confirmation of
-linked names/metadata. Errors are not converted into successful observations.
-Use the workbench as an async context manager. Component serialization is refused
-because restoring the upstream base provider would drop the guard.
+OpenSignet charges each renewal itself, 30 to 7 days before expiry, from the
+account's OpenSignet wallet or saved card. Nothing in this package signs, pays
+or changes a setting; turning renewal on or off is a write tool of the MCP
+server, outside this read-only package. Errors are never converted into
+successful answers. Use the workbench as an async context manager. Component
+serialization is refused because restoring the upstream base provider would
+drop the guard.
 
 ## Optional Real AssistantAgent
 
 `create_assistant(model, workbench)` constructs the real AutoGen AssistantAgent,
 with this guarded workbench, at most three tool iterations and no MCP sampling
 model. Supply and close your own trusted model client. No provider extra or model
-key is required for deterministic inspection.
+key is required for the deterministic reads.
 
 `opensignet-autogen-assistant` is an optional CLI. It reads a trusted AutoGen
 component JSON from `AUTOGEN_MODEL_CONFIG` (at most 16 KiB); configure the actual
@@ -147,8 +148,8 @@ OPENSIGNET_AUTOGEN_PYTHON=/absolute/path/to/venv/bin/python \
 
 On PowerShell, set `$env:OPENSIGNET_AUTOGEN_PYTHON` to the isolated venv's
 `Scripts/python.exe`. The native suite verifies that the connector imports from
-an installed distribution, uses actual AutoGen and the Node MCP/SDK against
-labelled synthetic RPC fixtures, exercises the real replay-model AssistantAgent,
+an installed distribution, uses actual AutoGen and the Node MCP/SDK against a
+labelled synthetic API stand-in, exercises the real replay-model AssistantAgent,
 and checks MCP child shutdown. It makes no paid LLM or live wallet calls.
 
 Packaging follows [PyPA's PEP 517 project guide](https://packaging.python.org/en/latest/tutorials/packaging-projects/)

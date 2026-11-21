@@ -5,8 +5,9 @@ description: Plan, quote, pay for, and track an OpenSignet identity without dupl
 
 ## 1. Choose the owner and bundle
 
-Decide which wallet will own the AgentID NFT and optional onchain names. The paying wallet can be
-different, but only the final owner can perform owner-only actions later.
+Decide which account will own the identity: the account that registers it manages it, and its
+OpenSignet Pass is minted into that account's OpenSignet wallet. The paying wallet can be
+different.
 
 Choose:
 
@@ -58,7 +59,7 @@ If the response is `processing`, poll or display the accepted state rather than 
 paid registration. A second checkout can represent a distinct payment intent.
 
 Status reads require the payer's web session cookie or `X-Agent-Signature`, not an agent API key or a
-payment proof. The payer may differ from the designated NFT owner. Reuse a fresh read signature
+payment proof. The payer may differ from the designated owner address. Reuse a fresh read signature
 between polls instead of prompting on every request. A timeout or abort stops local waiting, not
 the accepted purchase. Never automatically resubmit after a lost response.
 
@@ -83,7 +84,7 @@ unavailable and completion is not guaranteed to be instant.
 `action_required`, `failed`, `refunded`, and `awaiting_payment` stop the SDK waiter with a structured
 diagnostic. Inspect the state rather than assuming a new payment is needed. A completed status may
 lack `result` for older records; the SDK preserves the handle and reports
-`completion_result_unavailable` instead of inventing transaction or NFT fields.
+`completion_result_unavailable` instead of inventing transaction or token fields.
 
 ## 5. Keep recovery notices separate from status
 
@@ -101,11 +102,12 @@ erasure is promised. Retain recovery handles separately while an outcome remains
 
 ## 6. Prepare continuity
 
-After the AgentID NFT is available:
+Once the registration completes:
 
-1. Read the [renewal status](/guides/renewal/).
-2. Fund the identity's vault for the expected renewal amount.
-3. Have the owner turn on automatic renewal from their wallet, if wanted.
-4. Monitor the public expiry and renewal state.
+1. Read the [renewal status](/guides/renewal/). Automatic renewal is on unless it was turned off
+   at registration.
+2. If `ready` is false, act on `issue.message`: for example, the owner approves the OpenSignet
+   wallet once on opensignet.com, or adds USDC before the renewal is due.
+3. Keep monitoring `ready` and the domain's expiry.
 
 For raw request fields and response shapes, see the [Registration API](/api-reference/register/).

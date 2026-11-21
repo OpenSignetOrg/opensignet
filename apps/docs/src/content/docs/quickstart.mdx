@@ -103,7 +103,7 @@ a submitted request has an uncertain outcome.
 ## Read the result
 
 After HTTP `202`, `register()` waits using payer-authenticated status reads. On completion, the
-result identifies the identity (`agentId`), domain, optional onchain names, NFT token, metadata
+result identifies the identity (`agentId`), domain, optional onchain names, a token number, metadata
 URI, and provisioning state. A legacy HTTP `200` result can still report unfinished provisioning; it is
 not proof that all services are ready.
 
@@ -129,8 +129,8 @@ recovery, and completion contract. Service readiness is not guaranteed to be ins
 ## Manage it from your account
 
 Sign in at [opensignet.com](https://opensignet.com) with Google, an email code or a wallet. Your
-account manages the identity when one of its wallets holds the AgentID (your OpenSignet wallet or a
-linked wallet), or when the account registered it. Plans apply to the whole account and are bought
+account manages every identity it registers, and each identity's OpenSignet Pass is held by your
+OpenSignet wallet. Plans apply to the whole account and are bought
 from the dashboard or the [pricing page](https://opensignet.com/pricing), not during registration.
 
 Next, review [core concepts](/concepts/) and the complete [SDK guide](/sdk/typescript/).

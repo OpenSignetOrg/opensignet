@@ -4,7 +4,7 @@ OpenSignet is the agent-native identity and communications infrastructure.
 
 This TypeScript SDK makes identity and communication programmable for developers integrating
 directly, people guiding agents, and permissioned autonomous workflows. Domains, DNS, email,
-Basename, ENS, x402 USDC checkout, AgentID NFT, renewal controls, and plan status support that
+Basename, ENS, x402 USDC checkout, the OpenSignet Pass, renewal controls, and plan status support that
 foundation.
 
 The production API base is `https://api.opensignet.com/api/v1`. A direct `GET` request returns the
@@ -50,102 +50,28 @@ Pass a viem `walletClient` only for wallet-authorized or paid operations. Pass a
 agent-scoped API key only to a trusted server or agent runtime; never expose it
 in browser-delivered configuration.
 
-## Renewal workflow
+## Renewal
 
-| Export                                                    | Purpose                                                                     |
-| --------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `inspectAgentRenewal(input, options?)`                    | Read identity and canonical RenewalVault state at the same safe-block hash. |
-| `prepareAutoRenewChange(input, options?)`                 | Check owner/state and return an unsigned, attributed `setAutoRenew` plan.   |
-| `executeAutoRenewChange(plan, options)`                   | Require host human approval, revalidate and request one wallet submission.  |
-| `confirmAutoRenewChange(plan, transactionHash, options?)` | Read the actual transaction, canonical receipt and current safe flag once.  |
-
-These examples pin SDK **0.1.0**. To build from a reviewed source checkout:
-
-```bash
-pnpm --filter @opensignet/shared build
-pnpm --filter @opensignet/sdk build
-```
+Domains renew automatically by default (`autoRenew: true` at registration). OpenSignet charges
+each renewal when it falls due, 30 to 7 days before the domain expires, from the account's
+OpenSignet wallet balance or its saved card, and renews the domain at the registrar once.
+Nothing is deposited ahead of time and no onchain setting is involved.
 
 ```ts
-import { inspectAgentRenewal } from '@opensignet/sdk';
+const renewal = await ad.getRenewal(agentId);
+if (!renewal.ready) console.log(renewal.issue?.message); // e.g. the wallet holds too little USDC
 
-const observation = await inspectAgentRenewal({
-  domain: 'your-agent.xyz',
-  // Optional: compare the NFT owner with your own wallet address.
-  expectedOwner: '0xdE57dd241eA13A5EE749b940897538CF4ff4C25D',
-});
-console.log(JSON.stringify(observation, null, 2));
+await ad.setAutoRenew(agentId, false); // stop renewing this domain
+await ad.setAutoRenew(agentId, true); // and renew it again
 ```
 
-Inspection accepts exactly one `domain` or `tokenId` (a positive uint256 decimal
-string, not a JS number) and needs no wallet or API credential. All contract calls
-target the canonical OpenSignet ERC-721 and RenewalVault on Base mainnet at one
-RPC-reported safe block. Every read uses that block's hash with EIP-1898
-`requireCanonical: true`, including the Multicall3 batch; a provider that cannot
-honor the selector fails closed, with no fallback to a block number or latest.
-Missing identities, RPC failures, owner mismatches and inconsistent records stay
-distinct. This is a fixed-block RPC observation, **not a consensus/SPV proof,
-DNS-control verification, KYC check, or agent-behavior guarantee**; Basename/ENS
-labels and metadata URIs are recorded claims and are never fetched. The returned `availableAtomicUsdc`,
-`reservedAtomicUsdc` and `minimumFeeAtomicUsdc` are decimal strings, not JS numbers.
-Pending reservations, timing, flags and consistency are reported separately.
-`minimumFeeAtomicUsdc` is a minimum accepted keeper quote, **not a registrar
-price**; zero means unset. `isRenewable` checks native timing/flags, not funding or
-registrar completion. Both inspections support a trusted `publicClient` with
-`ccipRead: false`; the client and transport are host configuration, not tool inputs.
-
-For a setting change, supply a string `tokenId`, current `expectedOwner`, boolean
-`enabled` and public `builderCode`. This helper illustrates the separate host
-approval boundary without loading keys or supplying an automatic approval:
-
-```ts
-import {
-  prepareAutoRenewChange,
-  executeAutoRenewChange,
-  confirmAutoRenewChange,
-  type AutoRenewChangeInput,
-  type ExecuteAutoRenewChangeOptions,
-} from '@opensignet/sdk';
-
-async function reviewAutoRenewSetting(
-  input: AutoRenewChangeInput,
-  walletClient: ExecuteAutoRenewChangeOptions['walletClient'],
-  reviewInOwnerUI: ExecuteAutoRenewChangeOptions['approve'],
-) {
-  const plan = await prepareAutoRenewChange(input);
-  const attempt = await executeAutoRenewChange(plan, {
-    walletClient,
-    approve: reviewInOwnerUI,
-  });
-  if (attempt.status !== 'submitted') return { plan, attempt };
-  const confirmation = await confirmAutoRenewChange(plan, attempt.transactionHash);
-  return { plan, attempt, confirmation };
-}
-```
-
-`reviewInOwnerUI` must display the fresh complete plan and warnings, resolving
-`true` only after explicit human approval. Never replace it with an LLM boolean
-or unconditional approval. The SDK rechecks canonical ownership and vault state
-after approval and reconstructs transaction fields; caller JSON is not execution
-authority. No-change results require no signing. Keep the plan and any returned
-hash for later read-only confirmation.
-
-`no_change` means a fresh read already matched the desired flag. Reusing that
-plan object performs fresh checks and asks for new approval if a change is now
-needed. `submitted`, `rejected` and `submission_unknown` outcomes stay cached for
-that object in this process; this is not persistent idempotency. An unknown
-submission does not prove failure and must not trigger a new plan/signature or
-automatic resend. Confirmation may be `pending`, `unverified` or `reverted`;
-`confirmed` means a matching flag transaction **after the plan's recorded block**
-and matching safe readback, not cryptographic proof of a particular approval or
-completion of a domain renewal.
-
-Enabling permits authorized renewal operators to use this token's funded vault
-balance without a new signature for each renewal; the actual quote may exceed
-the minimum. Disabling prevents new reservations, but an existing one can still
-complete and charge. The setting transaction has zero native value but can cost
-network gas. See the [renewal guide](https://docs.opensignet.com/guides/renewal/)
-for the full result/error contracts and billing boundaries.
+`getRenewal()` reports whether renewal is on, how it is paid, the yearly price (USDC atomic
+units as a string), the charge window, the wallet's balance and approval, and the first thing
+in the way as `issue.code` and a plain `issue.message`. Renewing from the OpenSignet wallet
+needs the owner's approval once, given on opensignet.com; until then `setAutoRenew(id, true)`
+fails with `RENEWAL_APPROVAL_REQUIRED`. Code can switch renewal on and off within that
+approval but never widen what the wallet may pay. See the
+[renewal guide](https://docs.opensignet.com/guides/renewal/).
 
 ## Authentication model
 
@@ -153,25 +79,14 @@ for the full result/error contracts and billing boundaries.
 - Owner operations use a wallet signature through the supplied `walletClient`.
 - Agent-scoped operations can use a narrowly scoped `apiKey`.
 - x402 purchases require an authorized Base wallet with sufficient USDC.
-- Direct Base writes also require the public `builderCode` attribution value.
 
 The SDK does not persist credentials. Applications remain responsible for
 keeping wallet and API-key material out of source, logs, client bundles, and
 untrusted process environments.
 
-`builderCode` is the public ERC-8021 app identifier assigned to your application;
-it is not a wallet secret. It is required when the SDK creates a direct Base
-transaction, including `setAutoRenew` and the transaction returned by
-`withdrawFromVault`. Missing or invalid attribution fails before wallet
-submission. Read requests and offchain signatures are unaffected. x402 v2 paid
-requests continue to use the resource server's standard `builder-code`
-extension rather than a direct-transaction suffix.
-
 The SDK handles x402 v2 payment challenges for registration when a
-`walletClient` is provided. RenewalVault funding uses a
-delegated EIP-3009 authorization followed by the server's vault workflow; it is
-not converted into an x402 paid resource. Email setup, DNS orchestration, and
-AgentID NFT mint/orchestration are included at no extra cost; Basename and ENS
+`walletClient` is provided. Email setup, DNS orchestration, and
+the OpenSignet Pass are included at no extra cost; Basename and ENS
 remain optional paid add-ons.
 
 ## Request-bound payment signing
@@ -250,13 +165,13 @@ the minimum `RegistrationAccepted` response on `202` or the original
 after `202`. `waitForRegistration(acceptedOrIdOrHandle, options)` resumes waiting
 without submitting any purchase. Completion returns the server-projected
 `progress.result`; missing results produce `completion_result_unavailable`, never
-invented NFT IDs, transaction hashes, or metadata fields. Legacy public `200` fields
+invented token IDs, transaction hashes, or metadata fields. Legacy public `200` fields
 remain compatible and may still report unfinished provisioning. The SDK validates
 required fields and the requested domain, then returns the schema-projected result;
 unknown root or nested fields are not echoed to callers.
 
 `getRegistration(id)` and `getRegistrations({ limit, offset })` require the **payer**
-wallet, not a different designated NFT owner. They never send an agent API key or
+wallet, not a different designated owner address. They never send an agent API key or
 payment header as authorization. Lists default to 20 entries and accept at most 50.
 With a wallet client, they omit cookies and sign every request with a single-use,
 request-bound `X-Agent-Signature` (method, URL, body digest and nonce). Signatures are
@@ -310,14 +225,13 @@ and handle the structured errors described above. Legacy HTTP `200` results are 
 schema-projected, so callers must not rely on unknown response fields.
 
 The connected signer must match the registration payer (`args.wallet`); use
-`ownerAddress` for a different designated NFT owner. Registration does not authorize
+`ownerAddress` for a different designated owner address. Registration does not authorize
 with an agent API key. Custom API adapters must support the documented payer-scoped
 status contract, including `X-Authenticated-Wallet`. API URL validation applies at
 construction, including to clients used only for discovery.
 
 Align/deduplicate viem to the reviewed 2.56.3 version across the SDK and your client
-code. An independently pinned 2.55.8 `PublicClient` lacks the required
-`watchBlockHeaders` member and can fail TypeScript assignment. This release does not
+code. This release does not
 promise arbitrary mixed-version viem compatibility. Package imports remain ESM-only.
 
 The x402 packages remain aligned at 2.25.0. `createX402PaymentHeaders()` does not

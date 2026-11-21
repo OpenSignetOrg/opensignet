@@ -27,7 +27,7 @@ const solutionPages: SolutionPageDefinition[] = [
     path: '/ai-agent-identity',
     title: 'AI Agent Identity: Persistent Internet Identity for AI Agents',
     description:
-      'Learn how AI agent internet identity combines a domain, professional email, DNS, onchain AgentID, and owner-controlled lifecycle management.',
+      'Learn how AI agent internet identity combines a domain, professional email, DNS, an OpenSignet Pass, and owner-controlled lifecycle management.',
     eyebrow: 'AI agent identity',
     heading: 'An internet identity you own, use and keep online',
     introduction: [
@@ -41,18 +41,18 @@ const solutionPages: SolutionPageDefinition[] = [
       { label: 'Reach', detail: 'Configure DNS and professional email.' },
       {
         label: 'Verify',
-        detail: 'Anchor the identity with an AgentID on Base, owned by your account.',
+        detail: 'Anchor the identity with an OpenSignet Pass on Base, held by your account.',
       },
       { label: 'Persist', detail: 'Track expiry and renew automatically.' },
     ],
     sections: [
       {
         title: 'Identity must survive the agent process',
-        body: 'A model session, framework process, or API deployment can change without breaking the identity. The domain and AgentID remain durable references that other people, services, and agents can resolve.',
+        body: 'A model session, framework process, or API deployment can change without breaking the identity. The domain and its Pass remain durable references that other people, services, and agents can resolve.',
       },
       {
         title: 'One owner, multiple interoperable surfaces',
-        body: 'Your account controls the identity, whether you sign in with Google, an email code or a wallet. The domain, DNS, email, optional Basename and ENS names, and the AgentID present that identity wherever it needs to be reached.',
+        body: 'Your account controls the identity, whether you sign in with Google, an email code or a wallet. The domain, DNS, email, optional Basename and ENS names, and the OpenSignet Pass present that identity wherever it needs to be reached.',
       },
       {
         title: 'Built for both agents and developers',
@@ -70,7 +70,7 @@ console.log(discovery.endpoints);`,
     related: [
       {
         title: 'Onchain agent identity',
-        description: 'How AgentID, Basename, and ENS fit together.',
+        description: 'How the OpenSignet Pass, Basename, and ENS fit together.',
         href: '/onchain-agent-identity',
       },
       {
@@ -103,7 +103,7 @@ console.log(discovery.endpoints);`,
       { label: 'Search', detail: 'Check real-time availability and provider pricing.' },
       { label: 'Quote', detail: 'See domain cost and selected services.' },
       { label: 'Pay', detail: 'Pay in USDC on Base, by wallet or over x402.' },
-      { label: 'Provision', detail: 'Create DNS, email, metadata, and AgentID state.' },
+      { label: 'Provision', detail: 'Create DNS, email and the OpenSignet Pass.' },
     ],
     sections: [
       {
@@ -306,7 +306,7 @@ console.log(capabilities.supportedTypes);`,
       },
       {
         title: 'The response represents a lifecycle',
-        body: 'The resulting identity connects registrar state, metadata, DNS, email, onchain names, AgentID, ownership, expiration, and renewal configuration.',
+        body: 'The resulting identity connects registrar state, DNS, email, onchain names, the OpenSignet Pass, ownership, expiration, and renewal configuration.',
       },
       {
         title: 'One contract across integration surfaces',
@@ -403,9 +403,9 @@ if (response.status === 402) {
   {
     slug: 'onchain-agent-identity',
     path: '/onchain-agent-identity',
-    title: 'Onchain Agent Identity with AgentID, Basename, and ENS',
+    title: 'Onchain Identity with the OpenSignet Pass, Basename, and ENS',
     description:
-      'Connect a domain to a Base AgentID, an optional Basename and an optional ENS name, all owned by your account, without replacing the internet identity.',
+      'Connect a domain to an OpenSignet Pass on Base, an optional Basename and an optional ENS name, all held by your account, without replacing the internet identity.',
     eyebrow: 'Onchain agent identity',
     heading: 'Connect internet identity to verifiable ownership on Base',
     introduction: [
@@ -413,17 +413,17 @@ if (response.status === 402) {
       'An onchain identity makes ownership and state inspectable in a wallet-native environment. OpenSignet links those surfaces without pretending one can replace the other.',
     ],
     distinction:
-      'AgentID, Basename, ENS, and a DNS domain have different resolution and ownership models. OpenSignet coordinates them as one identity bundle while preserving each system as an explicit component.',
+      'The OpenSignet Pass, Basename, ENS, and a DNS domain have different resolution and ownership models. OpenSignet coordinates them as one identity bundle while preserving each system as an explicit component.',
     flow: [
       { label: 'Own', detail: 'Bind the identity to your account’s wallet on Base.' },
-      { label: 'Mint', detail: 'Create the AgentID record on Base.' },
+      { label: 'Mint', detail: 'Mint the OpenSignet Pass into your OpenSignet wallet on Base.' },
       { label: 'Name', detail: 'Optionally provision Basename and ENS labels.' },
       { label: 'Resolve', detail: 'Expose domain and metadata references to other systems.' },
     ],
     sections: [
       {
-        title: 'AgentID is the onchain identity anchor',
-        body: 'The AgentID contract records the identity token and its metadata on Base. The public identity shows the token identifier and owner address next to the internet domain.',
+        title: 'The OpenSignet Pass is the onchain anchor',
+        body: "The OpenSignet Pass is a non-transferable token on Base, held by your account's OpenSignet wallet. It links the domain with its Basename and ENS name, and is burned if the domain leaves OpenSignet.",
       },
       {
         title: 'Names are complementary',
@@ -435,15 +435,14 @@ if (response.status === 402) {
       },
     ],
     codeTitle: 'Read an identity through the API',
-    code: `const identity = await fetch(
-  'https://api.opensignet.com/api/v1/agents/AGENT_ID'
-).then((response) => response.json());
+    code: `const identity = await fetch('https://api.opensignet.com/api/v1/agents/AGENT_ID', {
+  headers: { Authorization: \`Bearer \${identityApiKey}\` },
+}).then((response) => response.json());
 
 console.log(identity.domain);
-console.log(identity.agentIdNft);
-console.log(identity.ownerAddress);`,
+console.log(identity.passTokenId);`,
     codeCaption:
-      'The public identity view connects readable internet state to verifiable Base ownership.',
+      'An identity is read with its own API key and is never public; its OpenSignet Pass is public on Base.',
     related: [
       {
         title: 'AI agent identity',
@@ -594,7 +593,7 @@ OPENSIGNET_API_KEY=your_agent_scoped_key`,
       'It uses the wallet and Base capabilities already present in the agent stack.',
     ],
     distinction:
-      'AgentKit supplies the agent runtime and wallet integration. OpenSignet supplies registrar, DNS, email, AgentID, plan, and renewal lifecycle operations behind a consistent API.',
+      'AgentKit supplies the agent runtime and wallet integration. OpenSignet supplies registrar, DNS, email, the OpenSignet Pass, plan, and renewal lifecycle operations behind a consistent API.',
     flow: [
       { label: 'Install', detail: 'Add the public OpenSignet AgentKit plugin.' },
       { label: 'Register', detail: 'Attach the action provider to the AgentKit runtime.' },
@@ -604,7 +603,7 @@ OPENSIGNET_API_KEY=your_agent_scoped_key`,
     sections: [
       {
         title: 'Native alignment with Base',
-        body: 'Registrations and plans can be paid in USDC on Base through x402 v2 and Coinbase CDP. The resulting identity includes an AgentID on Base and an optional Basename.',
+        body: 'Registrations and plans can be paid in USDC on Base through x402 v2 and Coinbase CDP. The resulting identity includes an OpenSignet Pass on Base and an optional Basename.',
       },
       {
         title: 'Actions stay typed and constrained',

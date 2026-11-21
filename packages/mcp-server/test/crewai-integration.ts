@@ -2,8 +2,6 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { decodeFunctionData, parseAbi } from 'viem';
-import { encodeSetAutoRenewCalldata } from '@opensignet/sdk';
 
 // Explicit native-Python suite. No silent skip or installation during npm tests.
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -58,20 +56,20 @@ const code = await new Promise<number | null>((resolve, reject) => {
 interface ChildTrace {
   pid: number;
 }
-interface RpcTrace {
+interface ApiTrace {
   pid: number;
   mode: string;
   method: string;
-}
-interface VaultTrace {
-  functionName: string;
+  path: string;
+  authorized: boolean;
 }
 interface ChromaProof {
   watched: number;
   hits: number;
 }
-interface PlanTrace {
-  transaction: { to: string; data: `0x${string}`; value: string };
+interface RenewalTrace {
+  ready: boolean;
+  renewal: { domain: string; price: string };
 }
 const traces = <T>(prefix: string, stream = stderr): T[] =>
   stream
@@ -82,13 +80,13 @@ const children = traces<ChildTrace>('CREWAI_CHILD ');
 process.stdout.write(
   stdout
     .split(/\r?\n/)
-    .filter((line) => !/^CREWAI_(PLAN|CHROMA) /.test(line))
+    .filter((line) => !/^CREWAI_(RENEWAL|CHROMA) /.test(line))
     .join('\n'),
 );
 process.stdout.write(
   stderr
     .split(/\r?\n/)
-    .map((line) => line.replace(/(?:CREWAI_[A-Z_]+|IDENTITY_[A-Z_]+) .*/, ''))
+    .map((line) => line.replace(/(?:CREWAI_[A-Z_]+|FIXTURE_API) .*/, ''))
     .filter((line) => line && !/^Processing request of type/.test(line))
     .join('\n'),
 );
@@ -101,40 +99,28 @@ for (const { pid } of children) {
 }
 assert.equal(code, 0, 'Native CrewAI integration failed; diagnostics above.');
 assert.ok(children.length >= 7, 'The real Node MCP processes must have run.');
-const calls = traces<RpcTrace>('CREWAI_RPC ');
+const calls = traces<ApiTrace>('FIXTURE_API ');
+assert.ok(calls.length > 0, 'The real SDK must have called the API boundary.');
+for (const call of calls) assert.equal(call.method, 'GET', 'Read-only tools never write.');
 const failedCallCounts = new Map<number, number>();
-for (const call of calls.filter((call) => call.mode === 'rpc-error')) {
+for (const call of calls.filter((call) => call.mode === 'api-error')) {
   failedCallCounts.set(call.pid, (failedCallCounts.get(call.pid) ?? 0) + 1);
 }
-assert.ok(failedCallCounts.size >= 2);
+assert.ok(failedCallCounts.size >= 1);
 for (const count of failedCallCounts.values())
-  assert.equal(count, 1, 'Failed RPC must not be retried.');
-assert.ok(calls.some((call) => call.method === 'eth_call'));
-assert.ok(
-  traces<VaultTrace>('CREWAI_VAULT ').some((call) => call.functionName === 'balanceOfToken'),
-);
+  assert.equal(count, 1, 'A failed API read must not be retried.');
+for (const call of calls.filter((call) => call.path === '/api/v1/domains/availability'))
+  assert.equal(call.authorized, false, 'Public reads carry no credential.');
 const chromaProofs = traces<ChromaProof>('CREWAI_CHROMA ', stdout);
-assert.ok(chromaProofs.length >= 10);
+assert.ok(chromaProofs.length >= 9);
 for (const proof of chromaProofs) {
   assert.ok(proof.watched >= 30);
   assert.equal(proof.hits, 0);
 }
-const plans = traces<PlanTrace>('CREWAI_PLAN ', stdout);
-assert.equal(plans.length, 1);
-const plan = plans[0]!;
-assert.equal(plan.transaction.to.toLowerCase(), '0xb7b19826a566ebd9e8b50bee986a8da04bbb2c0a');
-assert.equal(plan.transaction.data, encodeSetAutoRenewCalldata(7n, true, 'crewai_example'));
-assert.equal(plan.transaction.value, '0');
-const decoded = decodeFunctionData({
-  abi: parseAbi(['function setAutoRenew(uint256 tokenId,bool enabled)']),
-  data: plan.transaction.data,
-});
-assert.equal(decoded.functionName, 'setAutoRenew');
-assert.deepEqual(decoded.args, [7n, true]);
-for (const call of calls)
-  assert.ok(
-    ['eth_chainId', 'eth_getBlockByNumber', 'eth_getCode', 'eth_call'].includes(call.method),
-  );
+const renewals = traces<RenewalTrace>('CREWAI_RENEWAL ', stdout);
+assert.equal(renewals.length, 1);
+assert.equal(renewals[0]!.ready, true);
+assert.equal(renewals[0]!.renewal.domain, 'reader.xyz');
 console.log(
-  `\nOfficial CrewAI connector: ${children.length} real Node processes, ${calls.length} read-only RPC calls, all children exited; ${chromaProofs.length} Chroma tripwire checks passed.`,
+  `\nOfficial CrewAI connector: ${children.length} real Node processes, ${calls.length} read-only API calls, all children exited; ${chromaProofs.length} Chroma tripwire checks passed.`,
 );

@@ -32,62 +32,59 @@ reviewed source. Do not silently upgrade the dependency graph.
 
 ```python
 from pathlib import Path
-from opensignet_crewai import inspect_and_prepare, readonly_tools
+from opensignet_crewai import domain_availability, readonly_tools, renewal_report
 
-with readonly_tools(Path("node_modules/@opensignet/mcp-server/dist/index.js")) as tools:
-    result = inspect_and_prepare(
-        tools,
-        {"domain": "your-agent.xyz"},
-        expected_owner="0x1111111111111111111111111111111111111111",
-        enabled=True,
-        builder_code="your_builder_code",
-    )
-    print(result)
+server = Path("node_modules/@opensignet/mcp-server/dist/index.js")
+with readonly_tools(server) as tools:
+    print(domain_availability(tools, "your-agent", "xyz"))
+
+# The identity's own API key, from your secret store.
+with readonly_tools(server, api_key=api_key) as tools:
+    report = renewal_report(tools, "11111111-1111-4111-8111-111111111111")
+    print(report["ready"], report["nextStep"])
 ```
 
-`readonly_tools` accepts an optional `node` executable path and yields exactly:
+`readonly_tools` accepts an optional `node` executable path and an optional
+`api_key`, and yields exactly:
 
-1. `inspect_agent_renewal`
-2. `prepare_auto_renew_change`
+1. `check_domain_availability`
+2. `get_renewal_status`
 
 These are real CrewAI `BaseTool` instances. Keep the context open while your
 Agent/Crew uses them; set `allow_delegation=False`, `cache=False` and
 `memory=False`, and do not enable knowledge or Chroma capabilities. The
-deterministic `inspect_and_prepare` flow needs no LLM or model API key.
+deterministic helpers need no LLM or model API key.
 
-The installed command and module entry point expose the same flow:
+The installed command and module entry point expose the same reads:
 
 ```sh
-opensignet-crewai --server node_modules/@opensignet/mcp-server/dist/index.js \
-  --domain your-agent.xyz \
-  --expected-owner 0x1111111111111111111111111111111111111111 \
-  --builder-code your_builder_code --setting enable
+opensignet-crewai --server node_modules/@opensignet/mcp-server/dist/index.js --domain your-agent.xyz
+OPENSIGNET_API_KEY=osk_... opensignet-crewai \
+  --server node_modules/@opensignet/mcp-server/dist/index.js \
+  --agent-id 11111111-1111-4111-8111-111111111111
 python -m opensignet_crewai --help
 ```
 
-Use `--token-id` instead of `--domain`, or `--setting disable` for a disable plan.
-The JSON result contains `identity`, `renewal` and `unsignedPlan`. A missing
-identity returns null renewal/plan fields; foreign or inconsistent ownership
-and RPC errors stop the flow. Expected-owner matching is not authentication.
-
-No signing, transaction submission, execution tool, or approval argument exists.
-Preparing a zero-native-value plan does not approve spending. Actually enabling
-auto-renew later authorizes keeper spending of funded vault USDC without a new
-signature for every renewal. The minimum fee is not a registrar quote or a
-funding guarantee. Disabling does not cancel a pending reservation. Review and
-approve any execution in a separate trusted host using the SDK's fresh checks.
-Public RPC observations are not consensus proofs or registrar completion.
+`renewal_report` returns `renewal` (the full status), `ready`, and `nextStep`:
+the plain message of the first thing in the way, or null. OpenSignet charges each
+renewal itself, 30 to 7 days before expiry, from the account's OpenSignet wallet
+or saved card; nothing here signs, pays or changes a setting. Turning renewal on
+or off is a write tool of the MCP server, outside this read-only package. A
+failed read, a missing key or an answer for another identity raises
+`WorkflowError` and confirms nothing.
 
 ## Security And Bounds
 
-Only minimal OS process variables enter Node; wallet/API/model keys,
+Only minimal OS process variables enter Node, plus the identity's API key when
+the host passes it (it must look like an OpenSignet key). Wallet and model keys,
 `NODE_OPTIONS`, `ALLOW_WRITES` and ambient OpenSignet settings are excluded.
 Write tools are forced off. No `.env` file is loaded. The connector disables
 CrewAI telemetry/tracing in the Python process. This is credential minimization,
 not an OS sandbox for an untrusted local executable.
 
-Strict input models reject null selectors, extras and coerced booleans before
-RPC. Discovery rejects missing, duplicate and incompatible canonical tools.
+Strict input models reject extras, malformed agents and domains, and any
+endpoint or key from the model before a request. Discovery rejects missing,
+duplicate and incompatible tools.
 The pinned official client retains its 30-second connection/discovery/call
 deadlines, with **one total attempt** (`max_retries=1`) and tool/result caches
 off. Discovery uses one worker thread; each tool call owns and closes its own
@@ -105,7 +102,7 @@ The reported
 [poisoned-collection configuration risk also includes Python clients](https://github.com/chroma-core/chroma/issues/6717).
 This is not a blanket claim that the risk exists only in an HTTP server.
 
-The qualified three-tool flow does not call Chroma clients, collections or
+The qualified two-tool flow does not call Chroma clients, collections or
 embeddings, run a Chroma server, or enable memory, knowledge or caching. Tests
 trap those entry points while real Agent/Crew construction and MCP calls run.
 That is evidence about this bounded flow, not a patched dependency or a clean

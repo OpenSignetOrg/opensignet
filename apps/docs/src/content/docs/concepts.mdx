@@ -20,9 +20,10 @@ Cards are saved on Stripe's own page, at a card checkout or with **Add card** in
 settings. OpenSignet keeps only the brand, the last four digits and the expiry. The default card
 pays whatever is set to renew by card.
 
-An account owns an identity when one of its wallets holds the identity's AgentID, or when the
-account registered it. Managing an identity (DNS, email, API keys and settings) uses the account
-session. Onchain vault actions are signed by the wallet that holds the AgentID.
+An account owns the identities it registers. Each identity's OpenSignet Pass is held by the
+account's OpenSignet wallet and never moves. Managing an identity (DNS, email, API keys, renewal
+and settings) uses the account session, an API key scoped to the identity, or a wallet request
+signature from the account.
 
 ## Identity bundle
 
@@ -32,7 +33,7 @@ record. Depending on the selected options, the bundle contains:
 - a registered internet domain;
 - managed DNS;
 - a primary email address;
-- an AgentID NFT;
+- an OpenSignet Pass;
 - an optional Basename on Base;
 - an optional ENS name on Ethereum.
 
@@ -53,16 +54,19 @@ Stripe or in USDC on Base, not during registration. See the
 
 ## Owner and payer
 
-The wallet paying for registration can also be the owner. When `ownerAddress` is supplied, the
-AgentID is assigned to that address instead. The account that holds the owner wallet manages the
-identity, and onchain owner actions still need that wallet's signature, even when another wallet
-funded the original checkout.
+The wallet paying for registration can also be the owner. `ownerAddress` records a different
+owner address on the identity. The account that registered the identity manages it, whichever
+wallet funded the checkout.
 
-## AgentID NFT
+## OpenSignet Pass
 
-The AgentID NFT is the onchain ownership primitive for an identity. Public metadata can point to the
-identity's domain and declared capabilities. Applications should treat current API status and the
-onchain record as complementary signals rather than assuming an NFT alone proves service health.
+The OpenSignet Pass is a non-transferable token on Base, one per identity, minted into the
+account's OpenSignet wallet. It links the identity's domain with its Basename and ENS name and
+nothing else, and it never moves between wallets. It is public on chain, and its metadata and
+artwork are served at `https://opensignet.com/pass/<token id>`. When the domain leaves OpenSignet
+(the account is deleted for good, the domain is transferred out, or it expires), the pass is burned.
+Treat current API status and the pass as complementary signals: a pass alone does not prove
+service health.
 
 ## x402 payment
 
@@ -92,8 +96,10 @@ Automatic renewal is a switch, on by default when you buy. The plan renews on th
 bought with, or from the OpenSignet wallet when it was paid in USDC. Each identity's domain renews
 yearly, from 30 to 7 days before it expires, from the wallet or the saved card, chosen on the
 identity's Domain tab. A change of method applies from the next renewal. A declined card is tried
-once more a day later, with an email each time. The vault signs a wallet
-renewal only when it falls due, only to OpenSignet and never above that item's ceiling.
+once more a day later, with an email each time. The OpenSignet wallet signs a renewal only when
+it falls due, only to OpenSignet and never above that item's ceiling, within the owner's one-time
+approval. Code can read how a domain renews and switch it on or off; see
+[renewals](/guides/renewal/).
 
 ## Identity profile
 
@@ -103,11 +109,3 @@ rebuilt as SVG Tiny PS and published as the domain's BIMI logo (`default._bimi`)
 that support BIMI show once the domain's mail passes DMARC with enforcement; Gmail and Apple Mail
 also need a Verified Mark Certificate or Common Mark Certificate. PNG, JPG and WebP logos are
 shown in OpenSignet only.
-
-## Onchain renewal vault
-
-Each identity has an expiry. Any wallet can fund its RenewalVault balance. The wallet that holds
-the AgentID can turn on auto-renew on Base and withdraw unused funds. Renewal quotes are computed
-for the identity's services at renewal time.
-
-See [renewals and auto-renew](/guides/renewal/) for the supported flow.

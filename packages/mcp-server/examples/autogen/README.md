@@ -43,27 +43,41 @@ so the first release never needs to fetch itself from PyPI before it exists.
 Prefer the package directly:
 
 ```python
+import asyncio
 from pathlib import Path
-from opensignet_autogen import OpenSignetWorkbench, inspect_and_prepare, server_parameters
 
-params = server_parameters(
-    Path("/absolute/path/to/node"),
-    installed_package=Path("/trusted/node_modules/@opensignet/mcp-server"),
+from opensignet_autogen import (
+    OpenSignetWorkbench,
+    domain_availability,
+    renewal_report,
+    server_parameters,
 )
 
-async def inspect():
+
+async def check(api_key: str):
+    # api_key is the identity's own key, from your secret store.
+    params = server_parameters(
+        Path("/absolute/path/to/node"),
+        installed_package=Path("/trusted/node_modules/@opensignet/mcp-server"),
+        api_key=api_key,
+    )
     async with OpenSignetWorkbench(params) as tools:
-        return await inspect_and_prepare(tools, {"domain": "your-domain.xyz"})
+        print(await domain_availability(tools, "your-domain", "xyz"))
+        report = await renewal_report(tools, "11111111-1111-4111-8111-111111111111")
+        print(report["ready"], report["nextStep"])
 ```
 
 The installed `opensignet-autogen` command or `python -m opensignet_autogen`
-runs deterministic inspection without an LLM. The compatibility command
-`python inspect_renewal.py` accepts the same options:
+reads without an LLM. The compatibility command `python renewal_status.py`
+accepts the same options:
 
 ```bash
 opensignet-autogen --node /absolute/path/to/node \
   --installed-package /trusted/node_modules/@opensignet/mcp-server \
   --domain your-domain.xyz
+OPENSIGNET_API_KEY=osk_... opensignet-autogen --node /absolute/path/to/node \
+  --installed-package /trusted/node_modules/@opensignet/mcp-server \
+  --agent-id 11111111-1111-4111-8111-111111111111
 ```
 
 An explicit development alternative is `--source-checkout /reviewed/built/OpenSignet`.
@@ -71,11 +85,12 @@ Build the public shared/SDK/MCP packages through the repository's reviewed
 workflow first. Never accept either trusted path or launch configuration from
 an LLM, tool output or untrusted website.
 
-The workflow exposes `inspect_agent_renewal` and `prepare_auto_renew_change`. For a proposal, supply `--token-id`,
-`--expected-owner`, `--builder-code` and either `--prepare-enable` or
-`--prepare-disable`. The output is an unsigned setting plan for separate human
-review. It does not sign, fund, approve, execute or complete a registrar renewal.
-A minimum fee is not a registrar quote; a model's approval is not wallet authority.
+The workflow exposes only `check_domain_availability` and `get_renewal_status`.
+The renewal read prints `renewal` (the full status), `ready`, and `nextStep`: the
+plain message of the first thing in the way, or null. OpenSignet charges each
+renewal itself, 30 to 7 days before expiry, from the account's OpenSignet wallet
+or saved card; nothing here signs, pays or changes a setting. `--api-key-env NAME`
+reads the identity's key from another variable.
 
 For a real optional AssistantAgent, import `create_assistant(model, workbench)`.
 The `assistant_example.py` compatibility launcher delegates to the package's
@@ -106,7 +121,7 @@ node --test packages/mcp-server/test/autogen.integration.test.ts
 ```
 
 The suite verifies the installed package origin, actual AutoGen/AssistantAgent
-and MCP/SDK execution through labelled synthetic RPC fixtures, strict inputs,
+and MCP/SDK execution through a labelled synthetic API stand-in, strict inputs,
 minimal child environment and shutdown of all fixture-owned MCP processes.
 Without the selected Python interpreter the optional test is explicitly skipped.
 These are not paid LLM calls, live wallet transactions or customer observations.

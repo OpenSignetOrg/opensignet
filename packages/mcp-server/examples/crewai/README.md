@@ -7,14 +7,14 @@ to call the separately installed Node.js OpenSignet MCP server. It does not
 install `crewai-tools` or `mcpadapt`. The implementation is maintained only in
 `packages/crewai-plugin/src/opensignet_crewai`, not duplicated in this example.
 
-The deterministic example needs **no LLM, model API key, platform API key or
-wallet private key**. Its exact tool allowlist is:
+The example needs **no LLM, model API key or wallet private key**. Its exact
+tool allowlist is:
 
-1. `inspect_agent_renewal`: inspect identity and vault state at one safe block hash.
-2. `prepare_auto_renew_change`: produce an unsigned zero-value `setAutoRenew` plan.
+1. `check_domain_availability`: whether a domain can be registered, with its price.
+2. `get_renewal_status`: how an identity's domain renews and what stands in the way.
 
-There is no execution tool or approval parameter. `enabled` requests a setting;
-it is not permission to sign. An expected-owner comparison is not authentication.
+Both are read-only; write tools are forced off. The renewal read needs the
+identity's own API key, which the host passes explicitly.
 
 ## Install
 
@@ -76,52 +76,26 @@ Point `--server` to that installation's
 does not download or execute a package through `npx`. Only run a local executable
 and server entry you trust. Paths containing spaces must be quoted.
 
-## Inspect And Prepare
+## Check A Domain And Its Renewal
 
-From this directory, replacing the domain and owner with the intended identity:
+From this directory:
 
 ```sh
-.venv-native/bin/python readonly_flow.py \
-  --server ../../dist/index.js \
-  --domain your-agent.xyz \
-  --expected-owner 0x1111111111111111111111111111111111111111 \
-  --builder-code your_builder_code \
-  --setting enable
+.venv-native/bin/python readonly_flow.py --server ../../dist/index.js --domain your-agent.xyz
+OPENSIGNET_API_KEY=osk_... .venv-native/bin/python readonly_flow.py \
+  --server ../../dist/index.js --agent-id 11111111-1111-4111-8111-111111111111
 ```
 
-On Windows use `.venv-native/Scripts/python.exe`; enter the command on one line or use
-PowerShell's line continuation syntax. `--token-id 7` can replace `--domain`.
-`--setting disable` prepares only a disable-setting plan. `--node` can select
-an explicit Node executable.
+On Windows use `.venv-native/Scripts/python.exe` and set the key with
+`$env:OPENSIGNET_API_KEY = '...'`. `--api-key-env NAME` reads the key from another
+variable; `--node` selects an explicit Node executable.
 
-The JSON output contains `identity`, `renewal` and `unsignedPlan`. A missing
-identity produces null renewal/plan fields; RPC failure or inconsistent/foreign
-ownership stops the flow. The plan retains its ID, fresh observation,
-transaction destination/calldata, zero value, `noChange` and warnings.
-
-`minimumFeeAtomicUsdc` is the vault's **minimum accepted keeper quote**, not an
-actual registrar quote or a guarantee that the balance covers renewal. Reserved
-funds are separate from available funds. `isRenewable` is the vault timing/flags
-predicate, not proof of funding. Setting auto-renew does not renew a domain;
-disabling it does not cancel an existing keeper reservation. No registrar
-completion or expiry extension is confirmed here.
-
-Preparing this plan does not authorize anything. **Signing and confirming an
-enable-setting transaction later authorizes keepers to spend funded vault USDC
-on future renewals without a separate signature for each renewal.** That charge
-can exceed the minimum fee. A pending reservation can still complete and charge
-after auto-renew is disabled. A transaction's zero native-ETH `value` is not a
-promise of zero future USDC cost.
-
-Each inspection binds its internal reads to one safe block hash. The three calls
-are separate observations, not one atomic snapshot. Public RPC observations are
-not SPV/consensus proofs, DNS ownership, KYC or verification of linked names.
-
-Review any plan in a separate trusted host. Only the SDK's trusted-host
-execute/confirm workflow, with explicit human approval and fresh checks, can
-submit and confirm a setting change. Never turn an LLM-generated `approved: true`
-or this example's output into permission to sign. No keys are accepted or saved
-by this example.
+The domain check prints the availability answer. The renewal read prints
+`renewal` (the full status), `ready`, and `nextStep`: the plain message of the
+first thing in the way, or null when nothing is. OpenSignet charges renewals
+itself, 30 to 7 days before expiry, from the account's OpenSignet wallet or saved
+card; nothing here signs, pays or changes a setting. A failed read, a missing key
+or an answer for another identity stops with a clear error and confirms nothing.
 
 ## Use The Tools In A Crew
 
@@ -135,11 +109,12 @@ from opensignet_crewai import readonly_tools
 from crewai import Agent, Crew, Process, Task
 
 # your_llm is supplied by your application. No model credentials enter Node.
-with readonly_tools(Path("/trusted/path/to/mcp-server/dist/index.js")) as tools:
+# api_key is the identity's key from your secret store.
+with readonly_tools(Path("/trusted/path/to/mcp-server/dist/index.js"), api_key=api_key) as tools:
     reviewer = Agent(
         role="OpenSignet renewal reviewer",
-        goal="Report identity and renewal observations, then an unsigned setting plan",
-        backstory="You inspect public chain state and cannot sign or execute transactions.",
+        goal="Report whether a domain will keep renewing, and what to fix if not",
+        backstory="You read OpenSignet renewal status and cannot change anything.",
         tools=list(tools.values()),
         llm=your_llm,
         allow_delegation=False,
@@ -148,38 +123,33 @@ with readonly_tools(Path("/trusted/path/to/mcp-server/dist/index.js")) as tools:
     )
     task = Task(
         description=(
-            "Inspect {domain} against expected owner {owner}. Inspect renewal for "
-            "the returned token. If consistent, prepare the requested {enabled} "
-            "auto-renew setting with builder code {builder_code}. Report all "
-            "uncertainty, reservations and warnings. Never claim execution, "
-            "approval, registrar completion, or that minimum fee is a quote."
-            "Explain that actually enabling later authorizes future keeper USDC "
-            "spending without per-renewal signatures, and disabling does not "
-            "cancel a pending reservation."
+            "Read the renewal of identity {agent_id}. Say whether it will renew on "
+            "its own and, if not, the one thing the owner should do. Never claim a "
+            "renewal was paid or changed."
         ),
-        expected_output="Observations and an unsigned plan for a human to review, or a clear failure.",
+        expected_output="The renewal status and the next step, or a clear failure.",
         agent=reviewer,
     )
     crew = Crew(agents=[reviewer], tasks=[task], process=Process.sequential,
                 cache=False, memory=False, verbose=False)
-    # Supply domain/owner/enabled/builder_code from your application's user input.
+    # Supply agent_id from your application's user input.
     result = crew.kickoff(inputs=user_inputs)
 ```
 
-The optional model call can cost money and send public observations to the
+The optional model call can cost money and sends the renewal status to the
 selected model provider. It is not part of the paid-model-free test. This example
 disables framework telemetry/tracing and never loads a `.env` file. OS process
-plumbing is allowlisted; wallet/API/model keys, `ALLOW_WRITES`, `NODE_OPTIONS` and
-ambient OpenSignet settings are not forwarded. Write tools are forced off.
+plumbing is allowlisted; wallet and model keys, `ALLOW_WRITES`, `NODE_OPTIONS` and
+ambient OpenSignet settings are not forwarded, and the identity's API key only
+when the host passes it. Write tools are forced off.
 This is credential minimization, not an OS sandbox against a malicious binary.
 
-Explicit `BaseTool.args_schema` models enforce the canonical selector union,
-omit absent strings, and reject extra/approval/coerced-boolean arguments before
-RPC. Discovery rejects missing, duplicated or incompatible canonical tools.
+Explicit `BaseTool.args_schema` models reject extra, malformed or coerced
+arguments (an endpoint or key from the model, a non-UUID agent) before any
+request. Discovery rejects missing, duplicated or incompatible canonical tools.
 The official client is configured with `max_retries=1`, which in this pinned
 version means **one total attempt**, and no tool-list/result caching. Native
-30-second connection/discovery/call deadlines remain; SDK reads retain their own
-bounds. A closed context rejects further calls. Framework console output is
+30-second connection/discovery/call deadlines remain. A closed context rejects further calls. Framework console output is
 suppressed only within this context, preserving machine-readable CLI JSON.
 
 ## Security Note
@@ -227,11 +197,10 @@ to another environment installed from this lock plus the built Python wheel. Mis
 suite with installation instructions; it never silently skips or installs them.
 
 The suite starts the actual official Python connector, real Node MCP server and
-real SDK. A process-local JSON-RPC fixture replaces network responses with
-synthetic ABI-encoded chain data. It rejects unexpected RPC operations and
-checks that each MCP child exits, and fails if a Chroma entrypoint is used.
-No model, wallet, chain write, platform API,
-cloud service, customer identity or paid service is contacted.
+real SDK. A process-local stand-in replaces the OpenSignet API's answers; it
+rejects any write, any other host and any credential on a public read, checks
+that each MCP child exits, and fails if a Chroma entrypoint is used. No model,
+wallet, chain, live API, customer identity or paid service is contacted.
 
 Regenerate dependencies deliberately with the lock's recorded uv version, then rerun integration:
 

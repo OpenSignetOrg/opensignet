@@ -45,10 +45,10 @@ test('the context prompt explains the product, its safety rules and where to lea
     /DNS/,
     /HTTPS API/,
     /email inbox/,
-    /AgentID/,
+    /OpenSignet Pass/,
     /USDC on Base/,
     /x402/,
-    /RenewalVault/,
+    /renew automatically/,
     /MCP server/,
   ])
     assert.match(CONTEXT_PROMPT, topic);

@@ -1,20 +1,11 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { encodeFunctionData, type Hex } from 'viem';
 import {
   encodeBuilderCodeSuffix,
   parseBuilderCodeSuffixFromCalldata,
 } from '@x402/extensions/builder-code';
-import {
-  OpenSignet,
-  appendBuilderCodeAttribution,
-  encodeSetAutoRenewCalldata,
-} from '../dist/index.js';
-import { fake, type SdkPublicClient, type SdkWalletClient } from './helpers.ts';
+import { OpenSignet, appendBuilderCodeAttribution } from '../dist/index.js';
 
-const owner = '0x1111111111111111111111111111111111111111';
-const vault = '0x2222222222222222222222222222222222222222';
-const txHash = `0x${'ab'.repeat(32)}`;
 const builderCode = 'opensignet_test';
 const originalFetch = globalThis.fetch;
 
@@ -43,12 +34,7 @@ describe('public API default', () => {
   });
 });
 
-describe('ERC-8021 direct Base attribution', () => {
-  it('encodes and decodes app attribution on RenewalVault calldata', () => {
-    const data = encodeSetAutoRenewCalldata(42n, true, builderCode);
-    assert.deepEqual(parseBuilderCodeSuffixFromCalldata(data), { a: builderCode });
-  });
-
+describe('ERC-8021 builder-code attribution helpers', () => {
   it('preserves matching attribution and rejects invalid or conflicting attribution', () => {
     const baseData = '0x12345678';
     const attributed = appendBuilderCodeAttribution(baseData, builderCode);
@@ -58,130 +44,6 @@ describe('ERC-8021 direct Base attribution', () => {
       /different builder-code attribution/,
     );
     assert.throws(() => appendBuilderCodeAttribution(baseData, 'INVALID-CODE'), /1-32 lowercase/);
-  });
-
-  it('submits attributed setAutoRenew calldata through the configured wallet client', async () => {
-    let submitted: { to?: string; data?: Hex } | undefined;
-    globalThis.fetch = async () =>
-      new Response(
-        JSON.stringify({
-          tokenId: '42',
-          ownerAddress: owner,
-          autoRenewEnabled: false,
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      );
-    const ad = new OpenSignet({
-      apiUrl: 'https://example.test/api/v1',
-      builderCode,
-      renewalVaultAddress: vault,
-      walletClient: fake<SdkWalletClient>({
-        account: { address: owner },
-        sendTransaction: async (request: { to?: string; data?: Hex }) => {
-          submitted = request;
-          return txHash;
-        },
-      }),
-    });
-
-    const result = await ad.setAutoRenew('agent-id', true);
-
-    assert.equal(result.txHash, txHash);
-    assert.ok(submitted?.data);
-    assert.equal(submitted.to, vault);
-    assert.deepEqual(parseBuilderCodeSuffixFromCalldata(submitted.data), { a: builderCode });
-  });
-
-  it('fails before wallet submission when direct attribution is missing', async () => {
-    let submitted = false;
-    globalThis.fetch = async () =>
-      new Response(
-        JSON.stringify({
-          tokenId: '42',
-          ownerAddress: owner,
-          autoRenewEnabled: false,
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      );
-    const ad = new OpenSignet({
-      apiUrl: 'https://example.test/api/v1',
-      renewalVaultAddress: vault,
-      walletClient: fake<SdkWalletClient>({
-        account: { address: owner },
-        sendTransaction: async () => {
-          submitted = true;
-          return txHash;
-        },
-      }),
-    });
-
-    await assert.rejects(() => ad.setAutoRenew('agent-id', true), /requires builderCode/);
-    assert.equal(submitted, false);
-  });
-
-  it('does not report auto-renew success when the confirmed transaction reverted', async () => {
-    globalThis.fetch = async () =>
-      new Response(
-        JSON.stringify({
-          tokenId: '42',
-          ownerAddress: owner,
-          autoRenewEnabled: false,
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      );
-    const ad = new OpenSignet({
-      apiUrl: 'https://example.test/api/v1',
-      builderCode,
-      renewalVaultAddress: vault,
-      walletClient: fake<SdkWalletClient>({
-        account: { address: owner },
-        sendTransaction: async () => txHash,
-      }),
-      publicClient: fake<SdkPublicClient>({
-        waitForTransactionReceipt: async () => ({ status: 'reverted' }),
-      }),
-    });
-
-    await assert.rejects(
-      () => ad.setAutoRenew('agent-id', true, { waitForReceipt: true }),
-      /reverted on Base/,
-    );
-  });
-
-  it('attributes the Base withdrawal transaction returned by the API', async () => {
-    const rawData = encodeFunctionData({
-      abi: [
-        {
-          type: 'function',
-          name: 'withdraw',
-          inputs: [
-            { name: 'tokenId', type: 'uint256' },
-            { name: 'amount', type: 'uint256' },
-          ],
-          outputs: [],
-        },
-      ],
-      functionName: 'withdraw',
-      args: [42n, 1_000_000n],
-    });
-    globalThis.fetch = async () =>
-      new Response(
-        JSON.stringify({
-          chainId: 8453,
-          to: vault,
-          data: rawData,
-          value: '0',
-          functionName: 'withdraw',
-          args: { tokenId: '42', amount: '1000000' },
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      );
-    const ad = new OpenSignet({ apiUrl: 'https://example.test/api/v1', builderCode });
-
-    const transaction = await ad.withdrawFromVault('agent-id', '1');
-
-    assert.equal(transaction.data.startsWith(rawData), true);
-    assert.deepEqual(parseBuilderCodeSuffixFromCalldata(transaction.data), { a: builderCode });
   });
 
   it('recognizes a suffix produced directly by the official encoder', () => {

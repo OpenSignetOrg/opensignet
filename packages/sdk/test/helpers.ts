@@ -3,7 +3,6 @@ import type { OpenSignetOptions } from '../dist/index.js';
 
 /** The wallet and public client types accepted by the SDK. */
 export type SdkWalletClient = NonNullable<OpenSignetOptions['walletClient']>;
-export type SdkPublicClient = NonNullable<OpenSignetOptions['publicClient']>;
 
 /**
  * Cast a partial test double to the full interface the code under test accepts.

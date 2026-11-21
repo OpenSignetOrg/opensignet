@@ -1,32 +1,26 @@
+import { OpenSignet, type DomainRenewalStatus } from '@opensignet/sdk';
 import { createOpenSignetTools, type OpenSignetToolResult } from '../dist/index.js';
-import type { AgentRenewalInspection, AutoRenewChangePlan } from '@opensignet/sdk';
 
 // Compiled only. These calls prove the public tools preserve SDK input/output
 // types; this file is never executed or emitted by the test suite.
 async function contract() {
-  const tools = createOpenSignetTools({ includeUnsignedPlans: true });
-  const renewal = tools.find((candidate) => candidate.name === 'inspect_agent_renewal')!;
-  const result: OpenSignetToolResult<AgentRenewalInspection> = await renewal.invoke({
-    tokenId: '1',
+  const apiClient = new OpenSignet({ apiKey: 'host-configured' });
+  const tools = createOpenSignetTools({ apiClient, allowRenewalChanges: true });
+  const renewal = tools.find((candidate) => candidate.name === 'get_renewal_status')!;
+  const result: OpenSignetToolResult<DomainRenewalStatus> = await renewal.invoke({
+    agentId: '11111111-1111-4111-8111-111111111111',
   });
-  if (result.ok && result.data.status === 'found') {
-    const token: string = result.data.identity.tokenId;
-    const owner: `0x${string}` = result.data.identity.nftOwner;
-    void [token, owner];
+  if (result.ok) {
+    const price: string | null = result.data.price;
+    const ready: boolean = result.data.ready;
+    void [price, ready];
   }
-  // @ts-expect-error Token IDs must not lose precision as JSON numbers.
-  await renewal.invoke({ tokenId: 1 });
-  const prepare = tools.find((candidate) => candidate.name === 'prepare_auto_renew_change')!;
-  const plan: OpenSignetToolResult<AutoRenewChangePlan> = await prepare.invoke({
-    tokenId: '1',
-    expectedOwner: '0x1111111111111111111111111111111111111111',
-    enabled: false,
-    builderCode: 'example_app',
-  });
-  void plan;
-  // @ts-expect-error All four primitive planning fields are mandatory.
-  await prepare.invoke({ tokenId: '1', enabled: false });
-  // @ts-expect-error Host configuration accepts clients, not raw model RPC URLs.
-  createOpenSignetTools({ rpcUrl: 'https://untrusted.example.invalid' });
+  const change = tools.find((candidate) => candidate.name === 'set_auto_renew')!;
+  // @ts-expect-error `enabled` must be a boolean, never text a model guessed.
+  await change.invoke({ agentId: '11111111-1111-4111-8111-111111111111', enabled: 'yes' });
+  // @ts-expect-error Every tool needs a host-configured client.
+  createOpenSignetTools({});
+  // @ts-expect-error Host configuration accepts clients, not raw model endpoints.
+  createOpenSignetTools({ apiClient, apiUrl: 'https://untrusted.example.invalid' });
 }
 void contract;

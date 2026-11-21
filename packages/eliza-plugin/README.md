@@ -28,7 +28,7 @@ The plugin gives Eliza agents a complete OpenSignet lifecycle surface:
 - Registration quote and x402 registration
 - Agent email send/list/batch, monthly usage, signed inbound webhooks, primary address updates, and Plus/Pro/Max/Enterprise aliases
 - Typed DNS management for all 13 supported types, including capabilities, revision-safe batches, and BIND import/export
-- RenewalVault status, funding, and auto-renew
+- Domain renewal status, and automatic renewal on or off
 - Plan status (plans cover the whole account and are bought on opensignet.com)
 
 ## Runtime configuration
@@ -43,19 +43,15 @@ The default API is `https://api.opensignet.com/api/v1`. Configure
   registry allows it.
 - `OPENSIGNET_NETWORK` defaults to `base`.
 - `BASE_RPC_URL` optionally selects the Base RPC used for wallet operations.
-- `RENEWAL_VAULT_ADDRESS` is required for direct auto-renew actions.
-- `OPENSIGNET_BUILDER_CODE` identifies the public application for supported
-  direct Base transactions.
 
 Inject credentials with the runtime's secret facility. Do not place a private
 key or API key in a character file, repository, command line, or log.
 
-Set `OPENSIGNET_BUILDER_CODE` to your public ERC-8021 app identifier whenever
-the runtime can submit direct Base writes. The value is not a private key.
-Eliza passes it to the SDK and uses it for post-registration auto-renew; missing
-or invalid attribution stops the direct transaction before submission. Reads,
-offchain signatures, Ethereum L1 ENS operations, and standard x402 v2 paid
-requests are not changed.
+Renewals are charged by OpenSignet when they fall due, from the account's
+OpenSignet wallet or its saved card. `SET_AUTO_RENEW` turns a domain's automatic
+renewal on or off ("turn off auto renew for <agent id>"). Renewing from the
+OpenSignet wallet needs the owner's approval once, on opensignet.com; code can
+switch renewal within that approval but never widen what the wallet may pay.
 
 ## Links
 

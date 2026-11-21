@@ -84,6 +84,17 @@ const nextConfig: NextConfig = {
     return [
       { source: '/:path*', headers: securityHeaders },
       { source: '/favicon.ico', headers: [{ key: 'Content-Type', value: 'image/x-icon' }] },
+      // Pass artwork is an SVG opened on its own: it may draw inline styles and nothing else.
+      // Listed after the site-wide policy so it replaces it for this path.
+      {
+        source: '/pass/:id/image',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+          },
+        ],
+      },
       {
         source: '/:path*',
         has: [

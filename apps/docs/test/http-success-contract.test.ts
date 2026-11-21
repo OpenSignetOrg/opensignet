@@ -64,10 +64,14 @@ const expected: [HttpMethod, string, string, string[], AuthScope][] = [
     ['200'],
     'agent',
   ],
+  ['get', '/api/v1/agents/{id}/renewal', 'getRenewal', ['200'], 'agent'],
+  ['post', '/api/v1/agents/{id}/domain/auto-renew', 'turnOnAutoRenew', ['200'], 'agent'],
+  ['post', '/api/v1/agents/{id}/domain/auto-renew/off', 'turnOffAutoRenew', ['200'], 'agent'],
+  ['get', '/api/v1/agents/{id}/plan', 'getServicePlan', ['200'], 'agent'],
 ];
 
 function assertMatrix(operations: readonly PublicOperation[]): void {
-  assert.equal(operations.length, 35);
+  assert.equal(operations.length, 39);
   for (const [method, path, id, statuses, scope] of expected) {
     const entry = operations.find((entry) => entry.method === method && entry.path === path);
     assert.ok(entry, `${method} ${path}`);
@@ -90,7 +94,7 @@ function assertMatrix(operations: readonly PublicOperation[]): void {
   }
 }
 
-test('all 35 documented HTTP operations have exact reviewed success and authentication contracts', () => {
+test('all 39 documented HTTP operations have exact reviewed success and authentication contracts', () => {
   assertMatrix(publicOperations());
 });
 

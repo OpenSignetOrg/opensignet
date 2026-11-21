@@ -1,4 +1,8 @@
 {
+  "retired": {
+    "on": "2026-11-21",
+    "note": "OpenSignet no longer uses these contracts. The OpenSignet Pass (contracts/src/OpenSignetPass.sol) replaces the identity token, and renewals are charged from the account's OpenSignet wallet or card. The vault held no USDC when it was retired. The sources remain in this repository's history."
+  },
   "network": "base-mainnet",
   "chainId": 8453,
   "updatedAt": "2026-07-12",

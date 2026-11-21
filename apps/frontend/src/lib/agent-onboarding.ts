@@ -79,14 +79,14 @@ WHAT ONE REGISTRATION INCLUDES
 - A real domain name (.xyz, .com, .ai, .org, .io, .net, .co or .app), searched with live availability and pricing.
 - Managed DNS with programmable records, import and export.
 - A professional email inbox on that domain, with aliases, sending, webhooks and usage limits by plan.
-- An onchain AgentID: an ERC-721 identity on Base that proves who owns the identity.
+- An OpenSignet Pass: a non-transferable token on Base, held in the account's OpenSignet wallet, that links the domain with its Basename and ENS name.
 - Optional onchain names: a Basename on Base and an ENS name on Ethereum.
 
 HOW PAYMENT AND OWNERSHIP WORK
 - Registration is paid in USDC on Base (x402 for software), and the exact total is shown before anything is signed. Plans can also be paid by card.
 - The owner signs in with Google, a one-time email code or a wallet. One person has one account, and each account comes with its own OpenSignet wallet on Base that acts only on the owner's approval.
 - Signing in never authorizes a payment; every payment is a separate approval.
-- Renewals can run automatically from a renewal vault (the RenewalVault contract on Base) that the owner funds with USDC. If the vault runs short, the domain and its services can expire.
+- Domains renew automatically by default: OpenSignet charges each renewal when it falls due, from the account's OpenSignet wallet balance or a saved card, and the owner can turn it off for any domain. If a renewal can't be paid, the owner is reminded before the domain expires.
 - Plans apply to the whole account and add email capacity, API keys, DNS records and aliases on top of what every registration includes. They are bought or changed from the pricing page or the dashboard (card or USDC on Base), never during registration.
 
 WHY TEAMS CHOOSE IT

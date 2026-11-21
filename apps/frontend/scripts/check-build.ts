@@ -10,6 +10,9 @@ const APPROVED_HANDLERS = [
   '/manifest.webmanifest/route',
   /** Static public site-search index; no backend access. */
   '/search-index.json/route',
+  /** OpenSignet Pass metadata and artwork: public onchain data read from the public API. */
+  '/pass/[id]/route',
+  '/pass/[id]/image/route',
 ];
 
 export function assertBuildBoundary(routes: readonly string[], files: readonly string[]): void {

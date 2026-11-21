@@ -9,7 +9,7 @@ import { createPageMetadata } from '@/lib/seo';
 export const metadata: Metadata = createPageMetadata({
   title: 'Register a Domain and Identity for an AI Agent',
   description:
-    'Search live domain availability and provision a domain, DNS, professional email, and onchain AgentID through one Base-native registration flow.',
+    'Search live domain availability and provision a domain, DNS, professional email and an OpenSignet Pass through one Base-native registration flow.',
   path: '/register',
 });
 

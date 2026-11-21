@@ -429,8 +429,7 @@ export async function createMachineDocuments({
     'packages/shared/src/schemas.ts',
     'packages/shared/src/dns.ts',
     'packages/shared/src/constants.ts',
-    'packages/sdk/src/identity-inspection.ts',
-    'packages/sdk/src/renewal-workflow.ts',
+    'packages/sdk/src/registration.ts',
     'packages/langchain-plugin/src/index.ts',
     'apps/docs/scripts/public-api-contract.ts',
     'apps/docs/scripts/machine-docs.ts',
@@ -464,11 +463,9 @@ export async function createMachineDocuments({
     payments:
       'Require explicit human authorization for payment terms. Recover uncertain payment; never automatically repay or replace its authorization.',
     writes:
-      'Default to read-only. Unsigned plans do not sign, send, approve token allowances or move funds. Approval must come from trusted host UI, not an LLM-provided boolean.',
-    rpcTrust:
-      'Identity and renewal inspection are Base RPC observations pinned to a canonical safe block hash, not independent consensus, SPV, DNS or KYC proofs. Stored labels are not verified ownership. Metadata and CCIP callback URLs are not fetched.',
+      'Default to read-only. Write tools are an explicit host opt-in. Approval must come from trusted host UI, not an LLM-provided boolean.',
     renewal:
-      'RenewalVault minimum fee is not a registrar quote. An auto-renew setting transaction is not a completed domain renewal. Executing enable permits authorized renewal operators to use funded balances without per-renewal wallet signatures, at quotes that may exceed the minimum. Disabling stops new reservations but existing ones may complete and charge. Zero native value does not remove network gas. Read-only planning never executes.',
+      'OpenSignet charges each renewal itself, 30 to 7 days before expiry, from the account OpenSignet wallet or saved card. Renewing from the wallet needs the owner approval once on opensignet.com; code can switch renewal within it and never widens what the wallet may pay. ready means nothing stands in the way today, not that a renewal was paid.',
     authorization:
       'Registration recovery and notices are payer-scoped. An agent API key or payment reference cannot authorize them. Compare X-Authenticated-Wallet with the expected payer.',
     replay:

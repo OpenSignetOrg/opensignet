@@ -154,7 +154,7 @@ test('product introductions no longer restrict the product to autonomous agents'
       ),
     ),
   );
-  assert.ok(strings.includes('Onchain Agent Identity with AgentID, Basename, and ENS'));
+  assert.ok(strings.includes('Onchain Identity with the OpenSignet Pass, Basename, and ENS'));
   assert.ok(strings.includes('Autonomous Agent Renewals for Persistent Domains and Identities'));
   assert.ok(
     strings.includes('Email is currently text-only. Rich HTML and attachments are not supported.'),

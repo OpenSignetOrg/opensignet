@@ -4,7 +4,7 @@
  * three forms it links: the domain, the Basename and the ENS name.
  *
  * Pure and deterministic: the same pass always draws the same SVG, so any service can render
- * it (the NFT image, the dashboard, a share card) and get identical bytes.
+ * it (the pass image, the dashboard, a share card) and get identical bytes.
  */
 
 export interface PassArtInput {

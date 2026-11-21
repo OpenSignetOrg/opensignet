@@ -1,16 +1,10 @@
 import { tool } from '@langchain/core/tools';
 import {
-  inspectAgentRenewal,
-  prepareAutoRenewChange,
-  IdentityInspectionError,
-  RenewalWorkflowError,
-  type IdentityInspectionInput,
-} from '@opensignet/sdk';
-import {
   agentLookupSchema,
-  autoRenewChangeSchema,
-  identityInspectionSchema,
+  autoRenewSwitchSchema,
   registrationStatusSchema,
+  renewalStatusSchema,
+  servicePlanSchema,
 } from './schemas.js';
 import type {
   OpenSignetToolErrorCode,
@@ -20,9 +14,10 @@ import type {
 
 export {
   agentLookupSchema,
-  autoRenewChangeSchema,
-  identityInspectionSchema,
+  autoRenewSwitchSchema,
   registrationStatusSchema,
+  renewalStatusSchema,
+  servicePlanSchema,
 } from './schemas.js';
 export type {
   OpenSignetToolErrorCode,
@@ -30,103 +25,77 @@ export type {
   OpenSignetToolsOptions,
 } from './types.js';
 
-const inspectionMessages = {
-  INVALID_INPUT:
-    'Provide valid identity or auto-renew inputs. No observation or plan was confirmed.',
-  WRONG_CHAIN: 'The RPC returned another network. No Base observation was confirmed.',
-  UNSAFE_SNAPSHOT:
-    'The safe block changed or could not be confirmed. No observation was confirmed.',
-  UNAVAILABLE: 'The RPC observation is unavailable. No identity or renewal state was confirmed.',
-  IDENTITY_NOT_FOUND: 'The identity was not found. No auto-renew plan was prepared.',
-  OWNER_MISMATCH: 'The expected wallet does not match the current NFT owner. No plan was prepared.',
-  INCONSISTENT_STATE: 'Canonical identity or renewal records differ. No plan was prepared.',
-  REVOKED: 'Auto-renew cannot be enabled for this revoked identity.',
-  EXPIRED_TOO_LONG: 'This identity is past the supported renewal window.',
-  PLAN_INVALID: 'The auto-renew plan is invalid. No change was submitted.',
-  APPROVAL_REQUIRED: 'A separate trusted human approval is required. No change was submitted.',
-  STALE_PLAN: 'The auto-renew state changed. No change was submitted.',
-} satisfies Record<Exclude<OpenSignetToolErrorCode, 'API_UNAVAILABLE'>, string>;
+/** The plain-language answer for each refusal a tool can report. */
+const messages = {
+  API_UNAVAILABLE: 'The OpenSignet API call failed. Nothing was confirmed or changed.',
+  RENEWAL_APPROVAL_REQUIRED:
+    'Renewing from the OpenSignet wallet needs the owner’s approval once, on opensignet.com. Nothing was changed.',
+  CARD_UNAVAILABLE:
+    'This domain renews on a card and none is saved. The owner adds one on opensignet.com. Nothing was changed.',
+  DOMAIN_NOT_REGISTERED: 'The domain is still being registered. Try again once it is active.',
+} satisfies Record<OpenSignetToolErrorCode, string>;
 
-async function observation<T>(read: () => Promise<T>): Promise<OpenSignetToolResult<T>> {
+/** The SDK reports API refusals as `HTTP <status>[<CODE>]: …`; only known codes are surfaced. */
+function refusal(error: unknown): OpenSignetToolErrorCode {
+  const code = error instanceof Error ? /\[([A-Z_]+)\]/.exec(error.message)?.[1] : undefined;
+  return code !== undefined && code in messages && code !== 'API_UNAVAILABLE'
+    ? (code as OpenSignetToolErrorCode)
+    : 'API_UNAVAILABLE';
+}
+
+async function call<T>(run: () => Promise<T>): Promise<OpenSignetToolResult<T>> {
   try {
-    return { ok: true, data: await read() };
+    return { ok: true, data: await run() };
   } catch (error) {
-    const code =
-      error instanceof IdentityInspectionError || error instanceof RenewalWorkflowError
-        ? error.code
-        : 'UNAVAILABLE';
-    return { ok: false, error: { code, message: inspectionMessages[code] } };
+    const code = refusal(error);
+    return { ok: false, error: { code, message: messages[code] } };
   }
 }
 
-async function apiRead<T>(read: () => Promise<T>): Promise<OpenSignetToolResult<T>> {
-  try {
-    return { ok: true, data: await read() };
-  } catch {
-    return {
-      ok: false,
-      error: {
-        code: 'API_UNAVAILABLE',
-        message: 'The configured OpenSignet API read failed. No API status was confirmed.',
-      },
-    };
-  }
-}
-
-function identityInput(input: {
-  domain?: string;
-  tokenId?: string;
-  expectedOwner?: string;
-}): IdentityInspectionInput {
-  if ((input.domain === undefined) === (input.tokenId === undefined)) {
-    throw new IdentityInspectionError('INVALID_INPUT', inspectionMessages.INVALID_INPUT);
-  }
-  const expected = input.expectedOwner === undefined ? {} : { expectedOwner: input.expectedOwner };
-  return input.domain !== undefined
-    ? { domain: input.domain, ...expected }
-    : { tokenId: input.tokenId!, ...expected };
-}
-
-/** Real LangChain tools. No tool in this package submits, signs, or pays for a transaction. */
-export function createOpenSignetTools(options: OpenSignetToolsOptions = {}) {
-  const { publicClient, apiClient } = options;
-  const renewalTool = tool(
-    (input) => observation(() => inspectAgentRenewal(identityInput(input), { publicClient })),
-    {
-      name: 'inspect_agent_renewal',
+/**
+ * Real LangChain tools over the OpenSignet API. They read identities, registrations, plans and
+ * renewals; only `set_auto_renew`, when the host allows it, changes anything. No tool signs a
+ * transaction, pays, or accepts an endpoint or credential from the model.
+ */
+export function createOpenSignetTools(options: OpenSignetToolsOptions) {
+  const { apiClient } = options;
+  const reads = [
+    tool((input) => call(() => apiClient.getRenewal(input.agentId)), {
+      name: 'get_renewal_status',
       description:
-        'Read identity and canonical RenewalVault state at the same safe-block hash on Base. Provide exactly one domain or tokenId. Reports available/reserved USDC, flags, timing and consistency. minimumFeeAtomicUsdc is a minimum, NOT a registrar quote; isRenewable does not prove sufficient funds or registrar completion. No signing, payment or execution.',
-      schema: identityInspectionSchema,
-    },
-  );
-  const planTools =
-    options.includeUnsignedPlans === true
+        'How the identity’s domain renews: whether automatic renewal is on, how it is paid (OpenSignet wallet or card), its yearly price in USDC atomic units, when it is charged (30 to 7 days before expiry), the wallet balance and approval, and the first thing in the way (issue.code, issue.message).',
+      schema: renewalStatusSchema,
+    }),
+    tool((input) => call(() => apiClient.getServicePlan(input.agentId)), {
+      name: 'get_service_plan',
+      description:
+        'The limits the identity has from its account plan, and how the plan renews. Plans are changed by a person on opensignet.com, not through tools.',
+      schema: servicePlanSchema,
+    }),
+    tool((input) => call(() => apiClient.getAgentById(input.agentId)), {
+      name: 'lookup_agent',
+      description: 'Read one OpenSignet identity record with the host-configured client.',
+      schema: agentLookupSchema,
+    }),
+    tool((input) => call(() => apiClient.getRegistration(input.registrationId)), {
+      name: 'get_registration_status',
+      description:
+        'Read one registration status once using the host-configured payer authentication, which may request an API-auth signMessage. An API key alone is insufficient. Does not register, resume, poll, retry a payment or execute a transaction.',
+      schema: registrationStatusSchema,
+    }),
+  ];
+  const changes =
+    options.allowRenewalChanges === true
       ? [
-          tool((input) => observation(() => prepareAutoRenewChange(input, { publicClient })), {
-            name: 'prepare_auto_renew_change',
+          tool((input) => call(() => apiClient.setAutoRenew(input.agentId, input.enabled)), {
+            name: 'set_auto_renew',
             description:
-              'Prepare an unsigned zero-value set_auto_renew plan after fresh canonical owner/state checks. Requires tokenId, expectedOwner, enabled and public builderCode. Never signs, spends, approves or submits. Changing the flag does not renew a domain; disabling does not cancel pending renewal. Any execution requires separate trusted human approval outside these tools.',
-            schema: autoRenewChangeSchema,
+              'Turn automatic renewal of the identity’s domain on or off. Renewing from the OpenSignet wallet needs the owner’s approval once on opensignet.com; until then turning it on returns RENEWAL_APPROVAL_REQUIRED. Turning it off means the domain expires unless renewed; the owner is still reminded before it does.',
+            schema: autoRenewSwitchSchema,
           }),
         ]
       : [];
-  const apiTools = apiClient
-    ? [
-        tool((input) => apiRead(() => apiClient.getAgentById(input.agentId)), {
-          name: 'lookup_agent',
-          description:
-            'Read one OpenSignet API agent record using the host-configured SDK client. API data is not an onchain observation or proof of ownership.',
-          schema: agentLookupSchema,
-        }),
-        tool((input) => apiRead(() => apiClient.getRegistration(input.registrationId)), {
-          name: 'get_registration_status',
-          description:
-            'Read one registration status once using the host-configured payer authentication, which may request an API-auth signMessage. An API key alone is insufficient. Does not register, resume, poll, signTypedData, retry a payment or execute a transaction.',
-          schema: registrationStatusSchema,
-        }),
-      ]
-    : [];
-  return [renewalTool, ...planTools, ...apiTools];
+  return [...reads, ...changes];
 }
 
 export type OpenSignetTools = ReturnType<typeof createOpenSignetTools>;

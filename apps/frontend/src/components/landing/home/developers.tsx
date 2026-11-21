@@ -22,7 +22,7 @@ const identity = await opensignet.register({ preferredName: 'nova-labs', tld: 'a
 await opensignet.sendEmail(identity.agentId, {
   to: 'team@example.com',
   subject: 'nova-labs.ai is live',
-  text: 'Domain, DNS, inbox and AgentID are ready.',
+  text: 'Domain, DNS, inbox and Pass are ready.',
 });`,
   },
   {

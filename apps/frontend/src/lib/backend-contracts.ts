@@ -89,7 +89,7 @@ export const dnsRecordViewSchema = dnsRecordObjectSchema
  * GET /api/v1/agents/:id/management-view, with the account session cookie (any sign-in method).
  * Identity data is private: there is no public profile, registry or lookup of someone else's
  * identity, so this view is the only place an identity's details are read.
- *   200  the signed-in account owns the identity: its AgentID is held by one of the account's
+ *   200  the signed-in account owns the identity (it registered it); its Pass is held by the account's
  *        wallets (its OpenSignet wallet or a linked one), or it was registered by the account.
  *   401  no session; 403 or 404  the account does not own it (the page never says which).
  * Every other identity-management route (keys, DNS, email, plan, renewal) applies the same rule.
@@ -104,8 +104,8 @@ export const managementViewSchema = z
         basename: nullableText,
         ensName: nullableText,
         ownerAddress: address,
-        /** Null until the AgentID is minted (the contracts deploy later). */
-        agentIdNft: z.number().int().nonnegative().nullable(),
+        /** The identity's OpenSignet Pass token, or null until it is minted. */
+        passTokenId: z.number().int().nonnegative().nullable(),
         status: z.enum(['pending', 'active', 'expired', 'revoked']),
         framework: nullableText,
         createdAt: isoDate,
@@ -129,9 +129,7 @@ export const managementViewSchema = z
     publicConfig: z
       .object({
         usdc: address,
-        renewalVault: address.nullable(),
         metadataGateway: httpsUrl,
-        builderCode: nullableText,
       })
       .strict(),
   })

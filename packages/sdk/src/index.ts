@@ -2,51 +2,15 @@ import {
   type Address,
   type Hex,
   type WalletClient,
-  type PublicClient,
   type Transport,
   type Chain,
   type Account,
-  keccak256,
-  toHex,
   getAddress,
   isAddress,
   maxUint256,
   zeroAddress,
   concatHex,
-  encodeFunctionData,
 } from 'viem';
-import { base, baseSepolia } from 'viem/chains';
-export {
-  IdentityInspectionError,
-  AGENT_IDENTITY_REGISTRY_BASE,
-  type IdentityInspectionInput,
-  type IdentityInspectionOptions,
-  type IdentityInspectionPublicClient,
-  type IdentityInspectionResult,
-  type IdentityInspectionErrorCode,
-  type FoundAgentIdentity,
-  type MissingAgentIdentity,
-} from './identity-inspection.js';
-export {
-  inspectAgentRenewal,
-  prepareAutoRenewChange,
-  executeAutoRenewChange,
-  confirmAutoRenewChange,
-  RenewalWorkflowError,
-  AGENT_RENEWAL_VAULT_BASE,
-  AGENT_RENEWAL_USDC_BASE,
-  type RenewalWorkflowErrorCode,
-  type RenewalWorkflowOptions,
-  type RenewalPublicClient,
-  type AgentRenewalInspection,
-  type FoundAgentRenewal,
-  type MissingAgentRenewal,
-  type AutoRenewChangeInput,
-  type AutoRenewChangePlan,
-  type ExecuteAutoRenewChangeOptions,
-  type AutoRenewChangeExecution,
-  type AutoRenewChangeConfirmation,
-} from './renewal-workflow.js';
 import { z } from 'zod';
 import {
   emailAddressChangeResultSchema,
@@ -90,8 +54,6 @@ import type {
   RegistrationParams,
   RegistrationResult,
   EmailMessage,
-  RenewalPriceSnapshot,
-  ServicePlanEntitlement,
   ServicePlanKey,
 } from '@opensignet/shared';
 import {
@@ -151,37 +113,16 @@ const EIP3009_TYPES = {
   ],
 } as const;
 
-const RENEWAL_VAULT_ABI = [
-  {
-    type: 'function',
-    name: 'setAutoRenew',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'tokenId', type: 'uint256' },
-      { name: 'enabled', type: 'bool' },
-    ],
-    outputs: [],
-  },
-] as const;
-
 export interface OpenSignetOptions {
   /** Trusted application configuration, never an untrusted request parameter. Supports custom APIs. */
   apiUrl?: string;
   apiKey?: string;
   walletClient?: WalletClient<Transport, Chain, Account>;
-  publicClient?: PublicClient<Transport, Chain>;
   network?: 'base' | 'base-sepolia';
-  renewalVaultAddress?: Address;
   /** Use the signed-in opensignet.com session cookie instead of signing registration requests with walletClient. */
   registrationAuth?: 'signature' | 'session';
   /** Payer identity expected for registration session reads; this does not authenticate requests. */
   registrationExpectedPayer?: Address;
-  /**
-   * Public ERC-8021 app identifier used for direct Base transactions created by this SDK.
-   * Required only for direct onchain writes such as auto-renew and vault withdrawal.
-   * x402 v2 payments use the resource server's standard builder-code extension instead.
-   */
-  builderCode?: string;
 }
 
 /**
@@ -211,20 +152,6 @@ export function appendBuilderCodeAttribution(data: Hex, builderCode: string): He
 /** Decodes an ERC-8021 builder-code suffix from complete transaction calldata. */
 export function parseBuilderCodeAttribution(data: Hex) {
   return parseBuilderCodeSuffixFromCalldata(data);
-}
-
-/** Builds the exact attributed calldata used for RenewalVault auto-renew writes. */
-export function encodeSetAutoRenewCalldata(
-  tokenId: bigint,
-  enabled: boolean,
-  builderCode: string,
-): Hex {
-  const data = encodeFunctionData({
-    abi: RENEWAL_VAULT_ABI,
-    functionName: 'setAutoRenew',
-    args: [tokenId, enabled],
-  });
-  return appendBuilderCodeAttribution(data, builderCode);
 }
 
 export interface AvailabilityResult {
@@ -351,88 +278,80 @@ async function emailAddressResult<T>(
   return legacy.parse(value);
 }
 
-export interface VaultFundResult {
-  success: boolean;
-  depositTxHash: string;
-  autoRenewEnabled: boolean;
-  autoRenewTxHash: string | null;
-  vaultBalance: string;
-  agentId: string;
-  domain: string;
-}
-
-export interface VaultWithdrawResult {
-  chainId: number;
-  to: Address;
-  data: Hex;
-  value: '0';
-  functionName: 'withdraw';
-  args: {
-    tokenId: string;
-    amount: string;
-  };
-}
-
-export interface RenewalStatus {
-  agentId: string;
-  domain: string;
-  tokenId: string | null;
-  autoRenewEnabled: boolean;
-  vaultBalanceUsdc: string;
-  vaultBalanceAtomic: string;
-  vaultBalance: string;
-  pendingRenewalAmountUsdc?: string;
-  pendingRenewalAmountAtomic?: string;
-  renewalFeeUsdc: string;
-  renewalFeeAtomic: string;
-  nextRenewalAmountUsdc: string;
-  nextRenewalAmountAtomic: string;
-  shortfallUsdc: string;
-  shortfallAtomic: string;
-  requiredAmount: string;
-  hasEnoughBalanceForNextRenewal: boolean;
-  isFunded: boolean;
-  estimatedYearsCovered: number;
-  expiresAt: string | null;
-  renewableFrom: string | null;
-  daysUntilExpiry: number | null;
-  renewalWindowDays: number;
-  renewalDurationDays: number;
-  isRenewableNow: boolean;
-  status: string;
-  message: string;
-  warning?: string | null;
-  warnings?: string[];
-  renewalBreakdown?: {
-    years: number;
-    domainRenewalCostUsdc: string;
-    domainRenewalCostAtomic: string;
-    emailFeeUsdc: string;
-    emailFeeAtomic: string;
-    totalUsdc: string;
-    totalAtomic: string;
-  };
-  renewalSnapshot?: RenewalPriceSnapshot | null;
-  ownerAddress: string;
-}
-
-export interface AutoRenewResult {
-  agentId: string;
-  tokenId: string;
-  enabled: boolean;
-  changed: boolean;
-  txHash: Hex | null;
-}
-
 /**
  * The account's plan as it applies to one identity. Plans belong to the whole account and are
  * bought or changed by a person on opensignet.com (pricing page or dashboard), never through the
  * SDK or during registration.
  */
 export interface ServicePlanStatusResult {
+  entitlement: {
+    plan: ServicePlanKey;
+    planSku: string | null;
+    limits: {
+      monthlyEmails: number;
+      apiKeys: number;
+      dnsRecords: number;
+      emailAliases: number;
+      identities: number;
+    };
+  };
+  /** How the account's plan renews; `null` on the free plan. Plans are changed on opensignet.com. */
+  renewal: {
+    status: string;
+    autoRenew: boolean;
+    method: 'wallet' | 'card';
+    periodEnd: string;
+  } | null;
+}
+
+/** Why a domain would not renew on its own today (the first thing to fix). */
+export type RenewalIssueCode =
+  | 'not_registered'
+  | 'auto_renew_off'
+  | 'price_unavailable'
+  | 'approval_needed'
+  | 'wallet_balance_low'
+  | 'balance_unavailable'
+  | 'card_missing';
+
+/** How an identity's domain renews, from `GET /agents/{id}/renewal`. Amounts are USDC atomic units (6 decimals) as strings. */
+export interface DomainRenewalStatus {
   agentId: string;
   domain: string;
-  entitlement: ServicePlanEntitlement;
+  status: string;
+  expiresAt: string | null;
+  autoRenew: boolean;
+  /** How renewals are paid: the account's OpenSignet wallet, or its saved card. */
+  method: 'wallet' | 'card';
+  /** One year at the registrar's price, or `null` while it can't be read. */
+  price: string | null;
+  /** When the renewal is charged: from 30 days until 7 days before the domain expires. */
+  chargeWindow: { opensAt: string; closesAt: string } | null;
+  /** Present when the wallet pays: its address, USDC balance and whether the owner approved it to pay this renewal. */
+  wallet: { address: string | null; balance: string | null; approved: boolean } | null;
+  cardSaved: boolean;
+  /** True when nothing stands in the way of the next renewal. */
+  ready: boolean;
+  issue: { code: RenewalIssueCode; message: string } | null;
+}
+
+/** The identity's domain settings, from `GET /agents/{id}/domain`. */
+export interface DomainSettings {
+  domain: string;
+  status: string;
+  registered: boolean;
+  registrar: string | null;
+  registeredAt: string;
+  expiresAt: string | null;
+  autoRenew: boolean;
+  autoRenewAvailable: boolean;
+  renewalMethod: 'wallet' | 'card';
+  renewalPrice: string | null;
+  cardSaved: boolean;
+  nameservers: string[];
+  nameserversManaged: boolean;
+  transferLock: boolean;
+  whoisPrivacy: boolean;
 }
 
 export interface ApiKeySummary {
@@ -449,14 +368,6 @@ export interface CreatedApiKey extends ApiKeySummary {
   agentId: string;
   fullKey: string;
   warning?: string;
-}
-
-interface Eip3009RequirementForClient {
-  maxAmountRequired: string;
-  payTo: string;
-  maxTimeoutSeconds: number;
-  asset: string;
-  chainId?: number;
 }
 
 async function createRequestBoundPaymentPayload(
@@ -615,21 +526,15 @@ export async function createX402PaymentHeaders(
 export class OpenSignet {
   private apiUrl: string;
   private apiKey?: string;
-  private renewalVaultAddress?: Address;
-  private readonly builderCode?: string;
   private readonly registrationClient: RegistrationClient;
   readonly walletClient?: WalletClient<Transport, Chain, Account>;
-  readonly publicClient?: PublicClient<Transport, Chain>;
   readonly network: 'base' | 'base-sepolia';
 
   constructor(opts?: OpenSignetOptions) {
     this.apiUrl = normalizeApiBaseUrl(opts?.apiUrl ?? OPENSIGNET_API_BASE_URL);
     this.apiKey = opts?.apiKey;
     this.walletClient = opts?.walletClient;
-    this.publicClient = opts?.publicClient;
     this.network = opts?.network ?? 'base';
-    this.renewalVaultAddress = opts?.renewalVaultAddress;
-    this.builderCode = opts?.builderCode;
     this.registrationClient = new RegistrationClient({
       apiUrl: this.apiUrl,
       walletClient: this.walletClient,
@@ -638,15 +543,6 @@ export class OpenSignet {
       expectedPayer: opts?.registrationExpectedPayer,
       createPaymentHeaders: createX402PaymentHeaders,
     });
-  }
-
-  private requireBuilderCode(operation: string): string {
-    if (!this.builderCode) {
-      throw new Error(
-        `${operation} requires builderCode in the OpenSignet constructor so the direct Base transaction is attributed.`,
-      );
-    }
-    return validateBuilderCode(this.builderCode);
   }
 
   async checkAvailability(name: string, opts: { tld: string }): Promise<AvailabilityResult> {
@@ -728,47 +624,6 @@ export class OpenSignet {
     options: RegistrationRequestOptions = {},
   ): Promise<RegistrationProgress> {
     return this.registrationClient.recover(handle, options);
-  }
-
-  private async buildEip3009Authorization(requirement: Eip3009RequirementForClient, from: Address) {
-    const chain = this.network === 'base-sepolia' ? baseSepolia : base;
-    const now = BigInt(Math.floor(Date.now() / 1000));
-    const validBefore = now + BigInt(requirement.maxTimeoutSeconds || 300);
-    const nonce = keccak256(
-      toHex(`${from}:${Date.now()}:${Math.floor(Math.random() * 1e15)}`),
-    ) as Hex;
-    const message = {
-      from,
-      to: requirement.payTo as Address,
-      value: BigInt(requirement.maxAmountRequired),
-      validAfter: 0n,
-      validBefore,
-      nonce,
-    };
-
-    const signature = await this.walletClient!.signTypedData({
-      domain: {
-        name: 'USD Coin',
-        version: '2',
-        chainId: requirement.chainId ?? chain.id,
-        verifyingContract: requirement.asset as Address,
-      },
-      types: EIP3009_TYPES,
-      primaryType: 'TransferWithAuthorization',
-      message,
-    });
-
-    return {
-      signature,
-      authorization: {
-        from,
-        to: requirement.payTo,
-        value: requirement.maxAmountRequired,
-        validAfter: '0',
-        validBefore: validBefore.toString(),
-        nonce,
-      },
-    };
   }
 
   async getAgentsByWallet(wallet: Address): Promise<AgentRow[]> {
@@ -1147,148 +1002,35 @@ export class OpenSignet {
     return res.json();
   }
 
-  async fundRenewalVault(agentId: string, amountUsdc: string): Promise<VaultFundResult> {
-    const walletAddress = this.walletClient?.account?.address as Address | undefined;
-    if (!this.walletClient || !walletAddress) {
-      throw new Error(
-        'Funding the renewal vault requires a walletClient so the SDK can sign a USDC authorization.',
-      );
-    }
-
-    const url = `${this.apiUrl}/agents/${encodeApiPathSegment(agentId)}/renewal/fund`;
-    // Trusted constructor API base; inputs are encoded path/query data, not destination URLs.
-    // nosemgrep: nodejs_scan.javascript-ssrf-rule-node_ssrf
-    let res = await this.signedFetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: amountUsdc }),
-    });
-
-    if (res.status === 402) {
-      const challenge = (await res.json()) as {
-        scheme: 'eip3009';
-        chainId: number;
-        asset: string;
-        payTo: string;
-        maxAmountRequired: string;
-        maxTimeoutSeconds: number;
-      };
-      const authorization = await this.buildEip3009Authorization(challenge, walletAddress);
-      // Trusted constructor API base; inputs are encoded path/query data, not destination URLs.
-      // nosemgrep: nodejs_scan.javascript-ssrf-rule-node_ssrf
-      res = await this.signedFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: amountUsdc,
-          signature: authorization.signature,
-          authorization: authorization.authorization,
-        }),
-      });
-    }
-
-    if (!res.ok) throw new Error(await responseError(res));
-    return res.json();
-  }
-
-  async getRenewalStatus(agentId: string): Promise<RenewalStatus> {
-    const url = `${this.apiUrl}/agents/${encodeApiPathSegment(agentId)}/renewal/status`;
+  /** The identity's domain: registration dates, renewal settings, nameservers and transfer lock. */
+  async getDomain(agentId: string): Promise<DomainSettings> {
+    const url = `${this.apiUrl}/agents/${encodeApiPathSegment(agentId)}/domain`;
     const res = await this.signedFetch(url, {});
     if (!res.ok) throw new Error(await responseError(res));
     return res.json();
   }
 
-  async setAutoRenew(
-    agentId: string,
-    enabled: boolean,
-    opts: { renewalVaultAddress?: Address; waitForReceipt?: boolean } = {},
-  ): Promise<AutoRenewResult> {
-    const walletAddress = this.walletClient?.account?.address as Address | undefined;
-    if (!this.walletClient || !walletAddress) {
-      throw new Error(
-        'Auto-renew requires a walletClient for the AgentID NFT owner wallet. Any wallet can fund RenewalVault, but only the owner wallet can change auto-renew.',
-      );
-    }
-
-    const renewalVaultAddress = opts.renewalVaultAddress ?? this.renewalVaultAddress;
-    if (!renewalVaultAddress) {
-      throw new Error(
-        'renewalVaultAddress is required to enable auto-renew. Pass it to the OpenSignet constructor or setAutoRenew options.',
-      );
-    }
-
-    const status = await this.getRenewalStatus(agentId);
-    if (!status.tokenId) {
-      throw new Error('Auto-renew cannot be changed before the AgentID NFT is minted.');
-    }
-
-    if (status.ownerAddress && !sameAddress(walletAddress, status.ownerAddress)) {
-      throw new Error(
-        `Auto-renew can only be changed by the AgentID NFT owner wallet (${status.ownerAddress}).`,
-      );
-    }
-
-    if (status.autoRenewEnabled === enabled) {
-      return {
-        agentId,
-        tokenId: status.tokenId,
-        enabled,
-        changed: false,
-        txHash: null,
-      };
-    }
-
-    if (opts.waitForReceipt && !this.publicClient) {
-      throw new Error('waitForReceipt requires a publicClient in the OpenSignet constructor.');
-    }
-
-    const chain = this.network === 'base-sepolia' ? baseSepolia : base;
-    const data = encodeSetAutoRenewCalldata(
-      BigInt(status.tokenId),
-      enabled,
-      this.requireBuilderCode('Auto-renew'),
-    );
-    const txHash = (await this.walletClient.sendTransaction({
-      to: renewalVaultAddress,
-      data,
-      account: this.walletClient.account,
-      chain,
-    })) as Hex;
-
-    if (opts.waitForReceipt) {
-      const receipt = await this.publicClient!.waitForTransactionReceipt({ hash: txHash });
-      if (receipt.status !== 'success') {
-        throw new Error(`Auto-renew transaction ${txHash} reverted on Base.`);
-      }
-    }
-
-    return {
-      agentId,
-      tokenId: status.tokenId,
-      enabled,
-      changed: true,
-      txHash,
-    };
+  /**
+   * How the identity's domain renews: whether automatic renewal is on, how it is paid, its price
+   * and charge window, and the first thing standing in the way, if any.
+   */
+  async getRenewal(agentId: string): Promise<DomainRenewalStatus> {
+    const url = `${this.apiUrl}/agents/${encodeApiPathSegment(agentId)}/renewal`;
+    const res = await this.signedFetch(url, {});
+    if (!res.ok) throw new Error(await responseError(res));
+    return res.json();
   }
 
-  async withdrawFromVault(agentId: string, amountUsdc: string): Promise<VaultWithdrawResult> {
-    const url = `${this.apiUrl}/agents/${encodeApiPathSegment(agentId)}/renewal/withdraw`;
-    // Trusted constructor API base; inputs are encoded path/query data, not destination URLs.
-    // nosemgrep: nodejs_scan.javascript-ssrf-rule-node_ssrf
-    const res = await this.signedFetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: amountUsdc }),
-    });
+  /**
+   * Turns automatic renewal of the identity's domain on or off. Renewals from the OpenSignet
+   * wallet need the owner's approval once, given on opensignet.com; until then turning it on
+   * fails with `RENEWAL_APPROVAL_REQUIRED`. Code never widens what the wallet may pay.
+   */
+  async setAutoRenew(agentId: string, enabled: boolean): Promise<DomainSettings> {
+    const url = `${this.apiUrl}/agents/${encodeApiPathSegment(agentId)}/domain/auto-renew${enabled ? '' : '/off'}`;
+    const res = await this.signedFetch(url, { method: 'POST' });
     if (!res.ok) throw new Error(await responseError(res));
-    const transaction = (await res.json()) as VaultWithdrawResult;
-    return {
-      ...transaction,
-      data: appendBuilderCodeAttribution(
-        transaction.data,
-        this.requireBuilderCode('RenewalVault withdrawal'),
-      ),
-    };
+    return res.json();
   }
 
   async getServicePlan(agentId: string): Promise<ServicePlanStatusResult> {
@@ -1406,7 +1148,7 @@ export function createOpenAITools(): Array<{
       function: {
         name: 'quote_registration',
         description:
-          'Get pricing quote for registering an AI agent identity. Domain, DNS, email and AgentID NFT orchestration are included by default. Basename and ENS are optional.',
+          'Get pricing quote for registering an AI agent identity. Domain, DNS, email and the OpenSignet Pass are included by default. Basename and ENS are optional.',
         parameters: {
           type: 'object',
           properties: {
@@ -1452,7 +1194,7 @@ export function createOpenAITools(): Array<{
       function: {
         name: 'register_agent_identity',
         description:
-          'Register a new AI agent identity. Domain, DNS, email and AgentID NFT orchestration are included by default. Basename and ENS are optional.',
+          'Register a new AI agent identity. Domain, DNS, email and the OpenSignet Pass are included by default. Basename and ENS are optional.',
         parameters: {
           type: 'object',
           properties: {
@@ -1480,7 +1222,7 @@ export function createOpenAITools(): Array<{
             ownerAddress: {
               type: 'string',
               description:
-                'Optional EVM address that receives the AgentID NFT. Omit to use the paying wallet.',
+                'Optional EVM address recorded as the identity owner. Omit to use the paying wallet.',
             },
             emailEnabled: {
               type: 'boolean',
@@ -1605,7 +1347,7 @@ export function createOpenAITools(): Array<{
       function: {
         name: 'get_renewal_status',
         description:
-          'Get renewal vault status for an agent, including exact next renewal amount, purchase snapshot, vault balance, shortfall, renewal date, and auto-renew state',
+          'How the identity’s domain renews: whether automatic renewal is on, how it is paid (OpenSignet wallet or card), its yearly price, when it is charged (30 to 7 days before expiry), and the first thing in the way, if any.',
         parameters: {
           type: 'object',
           properties: {
@@ -1618,34 +1360,16 @@ export function createOpenAITools(): Array<{
     {
       type: 'function' as const,
       function: {
-        name: 'fund_renewal_vault',
+        name: 'set_auto_renew',
         description:
-          'Deposit USDC from the connected wallet into one AgentID renewal vault. Anyone can fund; only the owner can withdraw or enable auto-renew. Call get_renewal_status first and normally use its shortfallUsdc value.',
+          'Turn automatic renewal of the identity’s domain on or off. Renewals from the OpenSignet wallet need the owner’s approval once on opensignet.com; until then turning it on fails with RENEWAL_APPROVAL_REQUIRED. Turning it off means the domain expires unless renewed; the owner is still reminded before it does.',
         parameters: {
           type: 'object',
           properties: {
             agentId: { type: 'string', description: 'OpenSignet agent ID (UUID)' },
-            amountUsdc: {
-              type: 'string',
-              description: 'USDC amount to deposit, with up to 6 decimals.',
-            },
+            enabled: { type: 'boolean', description: 'true to renew automatically, false to stop' },
           },
-          required: ['agentId', 'amountUsdc'],
-        },
-      },
-    },
-    {
-      type: 'function' as const,
-      function: {
-        name: 'enable_auto_renew',
-        description:
-          'Enable RenewalVault auto-renew for an agent. Requires the walletClient to be the AgentID NFT owner wallet.',
-        parameters: {
-          type: 'object',
-          properties: {
-            agentId: { type: 'string', description: 'OpenSignet agent ID (UUID)' },
-          },
-          required: ['agentId'],
+          required: ['agentId', 'enabled'],
         },
       },
     },
@@ -1673,7 +1397,7 @@ export function createAnthropicTools(): Array<{
     {
       name: 'quote_registration',
       description:
-        'Get pricing quote for registering an AI agent identity. Domain, DNS, email and AgentID NFT orchestration are included by default. Basename and ENS are optional.',
+        'Get pricing quote for registering an AI agent identity. Domain, DNS, email and the OpenSignet Pass are included by default. Basename and ENS are optional.',
       input_schema: {
         type: 'object',
         properties: {
@@ -1716,7 +1440,7 @@ export function createAnthropicTools(): Array<{
     {
       name: 'register_agent_identity',
       description:
-        'Register a new AI agent identity. Domain, DNS, email and AgentID NFT orchestration are included by default. Basename and ENS are optional.',
+        'Register a new AI agent identity. Domain, DNS, email and the OpenSignet Pass are included by default. Basename and ENS are optional.',
       input_schema: {
         type: 'object',
         properties: {
@@ -1744,7 +1468,7 @@ export function createAnthropicTools(): Array<{
           ownerAddress: {
             type: 'string',
             description:
-              'Optional EVM address that receives the AgentID NFT. Omit to use the paying wallet.',
+              'Optional EVM address recorded as the identity owner. Omit to use the paying wallet.',
           },
           emailEnabled: {
             type: 'boolean',
@@ -1848,7 +1572,7 @@ export function createAnthropicTools(): Array<{
     {
       name: 'get_renewal_status',
       description:
-        'Get renewal vault status for an agent, including exact next renewal amount, purchase snapshot, vault balance, shortfall, renewal date, and auto-renew state',
+        'How the identity’s domain renews: whether automatic renewal is on, how it is paid (OpenSignet wallet or card), its yearly price, when it is charged (30 to 7 days before expiry), and the first thing in the way, if any.',
       input_schema: {
         type: 'object',
         properties: {
@@ -1858,31 +1582,16 @@ export function createAnthropicTools(): Array<{
       },
     },
     {
-      name: 'fund_renewal_vault',
+      name: 'set_auto_renew',
       description:
-        'Deposit USDC from the connected wallet into one AgentID renewal vault. Anyone can fund; only the owner can withdraw or enable auto-renew. Call get_renewal_status first and normally use its shortfallUsdc value.',
+        'Turn automatic renewal of the identity’s domain on or off. Renewals from the OpenSignet wallet need the owner’s approval once on opensignet.com; until then turning it on fails with RENEWAL_APPROVAL_REQUIRED. Turning it off means the domain expires unless renewed; the owner is still reminded before it does.',
       input_schema: {
         type: 'object',
         properties: {
           agentId: { type: 'string', description: 'OpenSignet agent ID (UUID)' },
-          amountUsdc: {
-            type: 'string',
-            description: 'USDC amount to deposit, with up to 6 decimals.',
-          },
+          enabled: { type: 'boolean', description: 'true to renew automatically, false to stop' },
         },
-        required: ['agentId', 'amountUsdc'],
-      },
-    },
-    {
-      name: 'enable_auto_renew',
-      description:
-        'Enable RenewalVault auto-renew for an agent. Requires the walletClient to be the AgentID NFT owner wallet.',
-      input_schema: {
-        type: 'object',
-        properties: {
-          agentId: { type: 'string', description: 'OpenSignet agent ID (UUID)' },
-        },
-        required: ['agentId'],
+        required: ['agentId', 'enabled'],
       },
     },
   ];
@@ -1954,16 +1663,13 @@ export async function runOpenSignetTool(
       );
     case 'delete_dns_record':
       return ad.deleteDnsRecord(args.agentId as string, args.recordId as string);
-    case 'get_renewal_status':
-      return ad.getRenewalStatus(args.agentId as string);
-    case 'fund_renewal_vault':
-      return ad.fundRenewalVault(args.agentId as string, args.amountUsdc as string);
-    case 'withdraw_renewal_vault':
-      return ad.withdrawFromVault(args.agentId as string, args.amountUsdc as string);
-    case 'enable_auto_renew':
-      return ad.setAutoRenew(args.agentId as string, true);
     case 'get_service_plan':
       return ad.getServicePlan(args.agentId as string);
+    case 'get_renewal_status':
+      return ad.getRenewal(args.agentId as string);
+    case 'set_auto_renew':
+      if (typeof args.enabled !== 'boolean') throw new Error('enabled must be true or false.');
+      return ad.setAutoRenew(args.agentId as string, args.enabled);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -2033,13 +1739,5 @@ function detailsToMessage(details: unknown): string | null {
     return JSON.stringify(details);
   } catch {
     return null;
-  }
-}
-
-function sameAddress(a: string, b: string): boolean {
-  try {
-    return getAddress(a as Address) === getAddress(b as Address);
-  } catch {
-    return a.toLowerCase() === b.toLowerCase();
   }
 }

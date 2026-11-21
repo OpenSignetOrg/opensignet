@@ -22,22 +22,3 @@ export function actionNamed(provider: OpenSignetActionProvider, name: string): N
   assert.ok(action, `missing action ${name}`);
   return action;
 }
-
-export interface SubmittedTransaction {
-  to: string;
-  data: `0x${string}`;
-}
-
-function isHex(value: unknown): value is `0x${string}` {
-  return typeof value === 'string' && value.startsWith('0x');
-}
-
-/** Narrows a wallet-provider transaction request to the fields these tests assert. */
-export function submittedTransaction(value: unknown): SubmittedTransaction {
-  assert.ok(value !== null && typeof value === 'object', 'transaction request was not submitted');
-  const to: unknown = Reflect.get(value, 'to');
-  const data: unknown = Reflect.get(value, 'data');
-  assert.ok(typeof to === 'string', 'transaction request has no target');
-  assert.ok(isHex(data), 'transaction request has no hex calldata');
-  return { to, data };
-}

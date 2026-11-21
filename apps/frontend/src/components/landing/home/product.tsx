@@ -24,8 +24,8 @@ const FEATURES = [
   },
   {
     icon: Fingerprint,
-    title: 'AgentID',
-    body: 'Proof of ownership on Base, held by your own wallet and tied to your account.',
+    title: 'OpenSignet Pass',
+    body: 'A pass on Base, held by your OpenSignet wallet, that links your domain, Basename and ENS name.',
   },
 ] as const;
 
@@ -37,7 +37,7 @@ export function Product() {
         id="home-product"
         label="One registration"
         title="Everything an identity needs, in one place"
-        lead="Register a domain and receive DNS, a professional inbox and an onchain AgentID with it. Manage all of it from one dashboard, or from code."
+        lead="Register a domain and receive DNS, a professional inbox and an OpenSignet Pass with it. Manage all of it from one dashboard, or from code."
       />
 
       <div aria-hidden className="relative mx-auto mt-14 max-w-6xl sm:mt-20">
@@ -129,7 +129,7 @@ function Console() {
           </div>
 
           <dl className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="AgentID" value="#1042" note="Base" />
+            <Stat label="Pass" value="No. 1042" note="Base" />
             <Stat label="Inbox" value="hello@" note={DOMAIN} />
             <Stat label="DNS records" value="12" note="All propagated" />
             <Stat label="Renews" value="18 Nov 2027" note="Automatic" />

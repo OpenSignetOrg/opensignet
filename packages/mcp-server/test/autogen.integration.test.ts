@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const fixtureObservation =
-  'AUTOGEN_TEST_OBSERVATIONS synthetic RPC fixture; no live identity or renewal proof';
+  'AUTOGEN_TEST_OBSERVATIONS synthetic API fixture; no live identity or renewal';
 const ownedTestLine = /^(test_[a-z0-9_]+) \(__main__\.RealWorkbenchTests\.\1\) \.\.\. ?(.*)$/;
 
 function fixtureChildPids(stderr: string, forbiddenPids: readonly number[] = []): number[] {
@@ -47,8 +47,8 @@ function fixtureReport(pid: number | string, prefix = '') {
 }
 
 const fixtureTestPrefix =
-  'test_missing_identity_and_rpc_failure_are_not_fabricated_success ' +
-  '(__main__.RealWorkbenchTests.test_missing_identity_and_rpc_failure_are_not_fabricated_success) ... ';
+  'test_trouble_missing_keys_and_failures_are_not_fabricated_success ' +
+  '(__main__.RealWorkbenchTests.test_trouble_missing_keys_and_failures_are_not_fabricated_success) ... ';
 
 test('fixture PID parsing includes unittest-prefixed and standalone child reports', () => {
   const log =
@@ -98,7 +98,7 @@ test('fixture PID parsing rejects a report without the exact fixture observation
 
 const python = process.env.OPENSIGNET_AUTOGEN_PYTHON;
 test(
-  'native Python AutoGen + real MCP stdio, synthetic RPC only',
+  'native Python AutoGen + real MCP stdio, synthetic API only',
   {
     skip: python
       ? false
@@ -130,14 +130,14 @@ test(
     assert.equal(
       result.status,
       0,
-      `Python AutoGen integration failed. Observations are synthetic.\n${result.stdout}\n${result.stderr}`,
+      `Python AutoGen integration failed. Answers are synthetic.\n${result.stdout}\n${result.stderr}`,
     );
-    assert.match(result.stdout, /SYNTHETIC RPC/);
+    assert.match(result.stdout, /SYNTHETIC API/);
     assert.match(result.stderr, /\bOK\b/);
     const count = Number(result.stderr.match(/Ran (\d+) tests? in /)?.[1]);
-    assert.ok(count >= 10, 'The actual Python integration suite must run, not just import.');
+    assert.ok(count >= 9, 'The actual Python integration suite must run, not just import.');
     t.diagnostic(
-      `${count} Python checks passed using actual AutoGen, actual Node MCP/SDK and synthetic RPC observations.`,
+      `${count} Python checks passed using actual AutoGen, actual Node MCP/SDK and synthetic API answers.`,
     );
     const children = fixtureChildPids(result.stderr, [process.pid, process.ppid, result.pid]);
     assert.ok(children.length > 0, 'The suite must actually launch the Node MCP child.');

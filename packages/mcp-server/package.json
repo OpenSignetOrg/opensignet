@@ -38,7 +38,7 @@
     "examples/crewai/requirements.lock",
     "examples/autogen/opensignet_workbench.py",
     "examples/autogen/assistant_example.py",
-    "examples/autogen/inspect_renewal.py",
+    "examples/autogen/renewal_status.py",
     "examples/autogen/README.md",
     "examples/autogen/requirements.txt",
     "examples/autogen/constraints.txt",

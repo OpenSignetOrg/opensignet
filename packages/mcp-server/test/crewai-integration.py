@@ -1,4 +1,4 @@
-"""Paid-model-free tests of official CrewAI tools against real Node MCP + SDK."""
+"""Paid-model-free tests of official CrewAI tools against the real Node MCP server and SDK."""
 
 from contextlib import contextmanager, ExitStack, redirect_stdout
 import asyncio
@@ -15,7 +15,9 @@ import unittest
 from unittest.mock import patch
 
 PACKAGE = Path(__file__).resolve().parents[1]
-VERSION = tomllib.loads((PACKAGE.parent / "crewai-plugin/pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+VERSION = tomllib.loads(
+    (PACKAGE.parent / "crewai-plugin/pyproject.toml").read_text(encoding="utf-8")
+)["project"]["version"]
 sys.path.insert(0, str(PACKAGE / "examples" / "crewai"))
 
 from crewai.tools import BaseTool  # noqa: E402
@@ -26,18 +28,19 @@ from crewai.tools.mcp_native_tool import MCPNativeTool  # noqa: E402
 from crewai.tools.tool_failure import ToolFailure  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 import opensignet_crewai  # noqa: E402
+import opensignet_crewai.connector as connector  # noqa: E402
 from readonly_flow import (  # noqa: E402
-    AutoRenewArguments,
-    IdentityArguments,
+    AgentArguments,
+    AvailabilityArguments,
     READ_ONLY_TOOLS,
     WorkflowError,
-    call_json,
     child_environment,
     constrain_tools,
-    inspect_and_prepare,
+    domain_availability,
     main,
     native_tools,
     readonly_tools,
+    renewal_report,
     server_parameters,
 )
 
@@ -128,9 +131,13 @@ def chroma_tripwires():
         yield hits, watched
 
 
-OWNER = "0x1111111111111111111111111111111111111111"
+AGENT = "11111111-1111-4111-8111-111111111111"
+KEY = "osk_" + "fixture".ljust(43, "0")
 NODE = os.environ["CREWAI_TEST_NODE"]
-ENTRY = PACKAGE / "test" / "crewai-fixture.ts"
+# The real built server, with the API stand-in preloaded in front of it.
+ENTRY = PACKAGE / "dist" / "index.js"
+PRELOAD = (PACKAGE / "test" / "crewai-fixture.ts").as_uri()
+REAL_SERVER_PARAMETERS = server_parameters
 POISON = {
     "AGENT_PRIVATE_KEY": "synthetic-do-not-inherit",
     "OPENSIGNET_API_KEY": "synthetic-do-not-inherit",
@@ -158,23 +165,29 @@ class NoModelCalls(BaseLLM):
         raise AssertionError("Constructing the example Crew must not call a paid model")
 
 
+def with_preload(params):
+    params.args[0:0] = ["--import", PRELOAD]
+    return params
+
+
 @contextmanager
-def fixture(mode="found"):
+def preloaded():
+    """Routes the connector's own server_parameters through the API stand-in."""
+    with patch.object(
+        connector,
+        "server_parameters",
+        lambda *args, **kwargs: with_preload(REAL_SERVER_PARAMETERS(*args, **kwargs)),
+    ):
+        yield
+
+
+@contextmanager
+def fixture(mode: str = "ready", api_key: str | None = KEY):
     with patch.dict(os.environ, POISON):
-        params = server_parameters(ENTRY, NODE)
+        params = with_preload(server_parameters(ENTRY, NODE, api_key))
         params.args.append(mode)
         with native_tools(params) as tools:
             yield tools
-
-
-def flow(tools, **overrides):
-    arguments = {
-        "expected_owner": OWNER,
-        "enabled": True,
-        "builder_code": "crewai_example",
-    }
-    arguments.update(overrides)
-    return inspect_and_prepare(tools, {"domain": "reader.xyz"}, **arguments)
 
 
 class ArgumentsTests(unittest.TestCase):
@@ -187,7 +200,7 @@ class ArgumentsTests(unittest.TestCase):
             installed_path.is_relative_to(Path(sysconfig.get_path("purelib")).resolve())
         )
         self.assertIs(readonly_tools, opensignet_crewai.readonly_tools)
-        self.assertIs(inspect_and_prepare, opensignet_crewai.inspect_and_prepare)
+        self.assertIs(renewal_report, opensignet_crewai.renewal_report)
 
     def test_chroma_tripwires_really_reject_client_and_embedding_access(self):
         import chromadb
@@ -223,7 +236,7 @@ class ArgumentsTests(unittest.TestCase):
         self.assertEqual(importlib.metadata.version("crewai"), "1.15.21")
         self.assertEqual(importlib.metadata.version("mcp"), "1.28.1")
 
-    def test_minimal_environment_and_no_ambient_flags(self):
+    def test_minimal_environment_never_inherits_keys_or_flags(self):
         result = child_environment({**POISON, "PATH": "bin", "SystemRoot": "windows"})
         self.assertEqual(
             result,
@@ -234,36 +247,31 @@ class ArgumentsTests(unittest.TestCase):
             },
         )
 
-    def test_optional_arguments_omitted_not_null(self):
-        self.assertEqual(
-            IdentityArguments(domain="reader.xyz").model_dump(),
-            {"domain": "reader.xyz"},
-        )
-        self.assertEqual(IdentityArguments(tokenId="7").model_dump(), {"tokenId": "7"})
+    def test_only_a_host_passed_identity_key_reaches_the_child(self):
+        result = child_environment({"PATH": "bin"}, KEY)
+        self.assertEqual(result["OPENSIGNET_API_KEY"], KEY)
+        for value in ("synthetic-do-not-inherit", "osk_short", KEY + "x", ""):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                child_environment({"PATH": "bin"}, value)
+
+    def test_arguments_are_strict(self):
+        self.assertEqual(AgentArguments(agentId=AGENT).model_dump(), {"agentId": AGENT})
         for value in (
             {},
-            {"domain": "x", "tokenId": "7"},
-            {"tokenId": 7},
-            {"domain": "x", "expectedOwner": None},
-            {"domain": "x", "approved": True},
+            {"agentId": "../../keys"},
+            {"agentId": AGENT, "apiKey": KEY},
+            {"agentId": AGENT, "apiUrl": "https://untrusted.example.invalid"},
         ):
             with self.subTest(value=value), self.assertRaises(ValidationError):
-                IdentityArguments.model_validate(value)
-
-    def test_no_model_boolean_approval_or_coercion(self):
-        args = {
-            "tokenId": "7",
-            "expectedOwner": OWNER,
-            "enabled": True,
-            "builderCode": "crewai_example",
-        }
+                AgentArguments.model_validate(value)
         for value in (
-            {**args, "approved": True},
-            {**args, "enabled": "true"},
-            {**args, "enabled": 1},
+            {"name": "reader"},
+            {"name": "Reader", "tld": "xyz"},
+            {"name": "reader.xyz", "tld": "xyz"},
+            {"name": "reader", "tld": "xyz", "registerEns": True},
         ):
             with self.subTest(value=value), self.assertRaises(ValidationError):
-                AutoRenewArguments.model_validate(value)
+                AvailabilityArguments.model_validate(value)
 
     def test_missing_duplicate_or_unexpected_tool_fails_closed(self):
         with self.assertRaises(WorkflowError):
@@ -288,18 +296,22 @@ class NativeConnectorTests(unittest.TestCase):
 
         self.addCleanup(verify)
 
-    def test_real_official_connector_and_sdk_unsigned_flow(self):
-        with patch.dict(os.environ, POISON), readonly_tools(ENTRY, NODE) as tools:
+    def test_real_official_connector_and_sdk_reads(self):
+        with (
+            patch.dict(os.environ, POISON),
+            preloaded(),
+            readonly_tools(ENTRY, NODE, KEY) as tools,
+        ):
             self.assertEqual(set(tools), set(READ_ONLY_TOOLS))
             self.assertTrue(all(isinstance(tool, BaseTool) for tool in tools.values()))
             self.assertTrue(all(type(tool) is MCPNativeTool for tool in tools.values()))
             ordered = list(tools.values())
-            for invalid in (ordered[:2], ordered + [ordered[0]], [ordered[0]] * 3):
+            for invalid in (ordered[:1], ordered + [ordered[0]], [ordered[0]] * 2):
                 with self.assertRaises(WorkflowError):
                     constrain_tools(invalid)
             reviewer = Agent(
                 role="Renewal reviewer",
-                goal="Inspect without signing",
+                goal="Check a domain keeps renewing",
                 backstory="Read-only integration fixture",
                 tools=ordered,
                 llm=NoModelCalls(model="fixture-no-model"),
@@ -311,8 +323,8 @@ class NativeConnectorTests(unittest.TestCase):
                 agents=[reviewer],
                 tasks=[
                     Task(
-                        description="Inspect an identity",
-                        expected_output="Observation",
+                        description="Check an identity's renewal",
+                        expected_output="Renewal status",
                         agent=reviewer,
                     )
                 ],
@@ -328,55 +340,59 @@ class NativeConnectorTests(unittest.TestCase):
             self.assertIs(crew.cache, False)
             assert agent_tools is not None
             self.assertEqual([tool.name for tool in agent_tools], list(READ_ONLY_TOOLS))
-            result = flow(tools)
-            self.assertEqual(result["identity"]["identity"]["domain"], "reader.xyz")
-            renewal = result["renewal"]
-            self.assertEqual(renewal["vault"]["availableAtomicUsdc"], "50000000")
-            self.assertEqual(renewal["vault"]["minimumFeeAtomicUsdc"], "5000000")
-            self.assertEqual(
-                renewal["renewalExecution"], "keeper_registrar_confirmation_required"
-            )
-            self.assertFalse(renewal["checks"]["withinRenewalWindow"])
-            plan = result["unsignedPlan"]
-            self.assertEqual(plan["kind"], "set_auto_renew")
-            self.assertEqual(plan["tokenId"], "7")
-            self.assertEqual(plan["transaction"]["value"], "0")
-            self.assertTrue(plan["transaction"]["data"].startswith("0x"))
-            self.assertFalse(plan["noChange"])
-            self.assertEqual(json.loads(json.dumps(plan)), plan)
-            print("CREWAI_PLAN " + json.dumps(plan), flush=True)
-            # Optional strings must work through BaseTool.run(), not a patched client.
-            self.assertEqual(
-                call_json(tools["inspect_agent_renewal"], {"tokenId": "7"})["status"],
-                "found",
-            )
-            for args in (
-                {"domain": "reader.xyz", "tokenId": "7"},
-                {"tokenId": "7", "approved": True},
-            ):
+
+            report = renewal_report(tools, AGENT)
+            self.assertTrue(report["ready"])
+            self.assertIsNone(report["nextStep"])
+            self.assertEqual(report["renewal"]["domain"], "reader.xyz")
+            self.assertEqual(report["renewal"]["price"], "10440000")
+            print("CREWAI_RENEWAL " + json.dumps(report), flush=True)
+
+            available = domain_availability(tools, "reader", "xyz")
+            self.assertTrue(available["available"])
+            self.assertFalse(domain_availability(tools, "taken", "xyz")["available"])
+            for args in ({"agentId": AGENT, "apiKey": KEY}, {"agentId": "not-a-uuid"}):
                 with self.assertRaises(ValueError):
-                    tools["inspect_agent_renewal"].run(**args)
+                    tools["get_renewal_status"].run(**args)
 
-    def test_wrong_expected_owner_stops_before_plan(self):
-        with fixture() as tools, self.assertRaises(WorkflowError):
-            flow(tools, expected_owner="0x2222222222222222222222222222222222222222")
+    def test_a_renewal_in_trouble_says_what_to_do(self):
+        with fixture("not-ready") as tools:
+            report = renewal_report(tools, AGENT)
+            self.assertFalse(report["ready"])
+            self.assertEqual(report["renewal"]["issue"]["code"], "wallet_balance_low")
+            self.assertTrue(
+                report["nextStep"].startswith("The OpenSignet wallet holds less")
+            )
 
-    def test_rpc_unavailable_is_not_readiness(self):
-        with fixture("rpc-error") as tools, self.assertRaises(WorkflowError):
-            flow(tools)
+    def test_an_answer_for_another_identity_is_refused(self):
+        with fixture("other-agent") as tools, self.assertRaises(WorkflowError):
+            renewal_report(tools, AGENT)
 
-    def test_native_error_retains_mcp_failure_and_does_not_retry(self):
-        with fixture("rpc-error") as tools:
-            result = tools["inspect_agent_renewal"].run(tokenId="7")
-            self.assertIsInstance(result, ToolFailure)
+    def test_without_the_identity_key_nothing_is_confirmed(self):
+        with fixture(api_key=None) as tools:
+            self.assertIsInstance(
+                tools["get_renewal_status"].run(agentId=AGENT), ToolFailure
+            )
+            with self.assertRaises(WorkflowError):
+                renewal_report(tools, AGENT)
+            # The public read still works without any credential.
+            self.assertTrue(domain_availability(tools, "reader", "xyz")["available"])
+
+    def test_api_unavailable_is_not_readiness_and_is_not_retried(self):
+        with fixture("api-error") as tools:
+            self.assertIsInstance(
+                tools["get_renewal_status"].run(agentId=AGENT), ToolFailure
+            )
+            with self.assertRaises(WorkflowError):
+                renewal_report(tools, AGENT)
 
     def test_tools_cannot_be_called_after_context_close(self):
         with fixture() as tools:
-            tool = tools["inspect_agent_renewal"]
+            tool = tools["get_renewal_status"]
         with self.assertRaisesRegex(RuntimeError, "context is closed"):
-            tool.run(tokenId="7")
+            tool.run(agentId=AGENT)
 
-    def test_cli_is_json_only_and_preserves_unsigned_workflow(self):
+    def test_cli_is_json_only(self):
         output = StringIO()
         argv = [
             "readonly_flow.py",
@@ -384,23 +400,59 @@ class NativeConnectorTests(unittest.TestCase):
             str(ENTRY),
             "--node",
             NODE,
-            "--token-id",
-            "7",
-            "--expected-owner",
-            OWNER,
-            "--builder-code",
-            "crewai_example",
-            "--setting",
-            "enable",
+            "--agent-id",
+            AGENT,
+            "--api-key-env",
+            "FIXTURE_IDENTITY_KEY",
         ]
         with (
+            preloaded(),
+            patch.object(sys, "argv", argv),
+            redirect_stdout(output),
+            patch.dict(os.environ, {**POISON, "FIXTURE_IDENTITY_KEY": KEY}),
+        ):
+            self.assertEqual(main(), 0)
+        self.assertTrue(json.loads(output.getvalue())["ready"])
+
+        output = StringIO()
+        argv = [
+            "readonly_flow.py",
+            "--server",
+            str(ENTRY),
+            "--node",
+            NODE,
+            "--domain",
+            "reader.xyz",
+        ]
+        with (
+            preloaded(),
             patch.object(sys, "argv", argv),
             redirect_stdout(output),
             patch.dict(os.environ, POISON),
         ):
             self.assertEqual(main(), 0)
-        result = json.loads(output.getvalue())
-        self.assertEqual(result["unsignedPlan"]["transaction"]["value"], "0")
+        self.assertTrue(json.loads(output.getvalue())["available"])
+
+    def test_cli_refuses_a_renewal_read_without_the_key(self):
+        argv = [
+            "readonly_flow.py",
+            "--server",
+            str(ENTRY),
+            "--node",
+            NODE,
+            "--agent-id",
+            AGENT,
+        ]
+        environment = {
+            key: value for key, value in POISON.items() if key != "OPENSIGNET_API_KEY"
+        }
+        with (
+            preloaded(),
+            patch.object(sys, "argv", argv),
+            patch.dict(os.environ, environment),
+            patch.dict(os.environ, {"OPENSIGNET_API_KEY": ""}),
+        ):
+            self.assertEqual(main(), 1)
 
     def test_discovery_missing_duplicate_and_schema_drift_fail_closed(self):
         for mode in ("missing-tool", "duplicate-tool", "invalid-schema"):
@@ -409,7 +461,7 @@ class NativeConnectorTests(unittest.TestCase):
                     self.fail("Unqualified tool discovery was accepted")
 
     def test_official_retry_counter_is_one_attempt_not_one_retry(self):
-        params = server_parameters(ENTRY, NODE)
+        params = with_preload(server_parameters(ENTRY, NODE))
         from crewai.mcp.transports.stdio import StdioTransport
 
         client = MCPClient(
@@ -425,42 +477,6 @@ class NativeConnectorTests(unittest.TestCase):
         with self.assertRaises(ConnectionError):
             asyncio.run(client._retry_operation(fail))
         self.assertEqual(attempts, 1)
-
-    def test_missing_identity_preserved_without_plan(self):
-        with fixture() as tools:
-            result = inspect_and_prepare(
-                tools,
-                {"tokenId": "8"},
-                expected_owner=OWNER,
-                enabled=True,
-                builder_code="crewai_example",
-            )
-            self.assertEqual(result["identity"]["status"], "not_found")
-            self.assertIsNone(result["renewal"])
-            self.assertIsNone(result["unsignedPlan"])
-
-    def test_insufficient_funds_not_promoted_to_actual_quote_or_execution(self):
-        with fixture("underfunded") as tools:
-            result = flow(tools)
-            self.assertFalse(result["renewal"]["checks"]["availableCoversMinimum"])
-            self.assertEqual(result["renewal"]["vault"]["availableAtomicUsdc"], "0")
-            self.assertEqual(result["unsignedPlan"]["transaction"]["value"], "0")
-
-    def test_no_change_stays_no_change(self):
-        with fixture("no-change") as tools:
-            self.assertTrue(flow(tools)["unsignedPlan"]["noChange"])
-
-    def test_disable_does_not_cancel_a_pending_reservation(self):
-        with fixture("pending") as tools:
-            result = flow(tools, enabled=False)
-            self.assertEqual(
-                result["renewal"]["vault"]["reservedAtomicUsdc"], "5000000"
-            )
-            self.assertIsNotNone(
-                result["unsignedPlan"]["observation"]["vault"]["pendingRenewal"]
-            )
-            self.assertTrue(result["unsignedPlan"]["warnings"])
-            self.assertFalse(result["unsignedPlan"]["enabled"])
 
 
 if __name__ == "__main__":

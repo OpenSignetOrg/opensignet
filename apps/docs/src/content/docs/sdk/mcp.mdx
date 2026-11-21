@@ -52,13 +52,11 @@ protected secret controls, never in a committed configuration file.
 | Setting                         | Purpose                                                                                                                                                                                       |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OPENSIGNET_ENABLE_WRITE_TOOLS` | Exactly `true` lists the write tools; unset or `false` keeps the server read-only. Any other value fails.                                                                                     |
-| `OPENSIGNET_API_KEY`            | API key scoped to one identity, for DNS, email and management tools.                                                                                                                          |
-| Wallet key                      | Signs registration and renewal-vault actions. Use a dedicated wallet. The setting name is in the [package README](https://github.com/OpenSignetOrg/opensignet/tree/main/packages/mcp-server). |
+| `OPENSIGNET_API_KEY`            | API key scoped to one identity, for DNS, email, renewal and management tools.                                                                                                                 |
+| Wallet key                      | Signs registration payments. Use a dedicated wallet. The setting name is in the [package README](https://github.com/OpenSignetOrg/opensignet/tree/main/packages/mcp-server).                  |
 | `OPENSIGNET_API_URL`            | Defaults to `https://api.opensignet.com/api/v1`.                                                                                                                                              |
 | `OPENSIGNET_NETWORK`            | `base` (default) or `base-sepolia`.                                                                                                                                                           |
 | `OPENSIGNET_REGISTRANT`         | The domain owner as JSON (the [registrant fields](/api-reference/register/#domain-owner)), used when `register_agent` is called without `registrant`. Registries require it for every domain. |
-| `OPENSIGNET_BUILDER_CODE`       | Required for tools that send a Base transaction directly, such as enabling auto-renew.                                                                                                        |
-| `RENEWAL_VAULT_ADDRESS`         | RenewalVault contract used by the renewal tools.                                                                                                                                              |
 
 ## Tools
 
@@ -72,64 +70,31 @@ Read-only tools are always listed. Write tools are listed only when
 | Email        | `list_agent_email`, `get_agent_email_usage`                                    | `send_agent_email`, `send_agent_email_batch`, `delete_agent_email`, `configure_email_webhook`          |
 | Addresses    |                                                                                | `update_primary_email`, `create_email_alias`, `delete_email_alias`                                     |
 | DNS          | `get_dns_capabilities`, `list_dns_records`, `export_dns_zone`                  | `create_dns_record`, `update_dns_record`, `delete_dns_record`, `change_dns_records`, `import_dns_zone` |
-| Renewal      | `get_renewal_status`, `inspect_agent_renewal`, `prepare_auto_renew_change`     | `fund_renewal_vault`, `enable_auto_renew`, `withdraw_renewal_vault`                                    |
+| Renewal      | `get_renewal_status`                                                           | `set_auto_renew`                                                                                       |
 | Plans        | `get_service_plan`                                                             |                                                                                                        |
 
-## Renewal planning tools
+## Renewal tools
 
-The MCP server includes these default read-only tools. They call
-standalone SDK functions and do not create new
-HTTP API endpoints:
+| Tool                 | Arguments                      | Result                                                                                         |
+| -------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `get_renewal_status` | `agentId`                      | Whether the domain renews, how it is paid, its price, the charge window and what is in the way |
+| `set_auto_renew`     | `agentId`, `enabled` (boolean) | Turns automatic renewal on or off and returns the domain's settings                            |
 
-| Tool                        | Arguments                                                     | Result                                                                                |
-| --------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `inspect_agent_renewal`     | Exactly one `domain` or `tokenId`, optional `expectedOwner`   | Identity and vault observation at the same canonical safe hash                        |
-| `prepare_auto_renew_change` | Required `tokenId`, `expectedOwner`, `enabled`, `builderCode` | JSON-safe unsigned `set_auto_renew` plan with exact transaction fields and `noChange` |
+OpenSignet charges each renewal itself, 30 to 7 days before expiry, from the account's
+OpenSignet wallet or saved card; no tool sends a wallet transaction for it. `get_renewal_status`
+returns `ready` and, when something is in the way, `issue.code` and a plain `issue.message`.
+Renewing from the OpenSignet wallet needs the owner's approval once, on opensignet.com; until then
+`set_auto_renew` with `enabled: true` fails with `RENEWAL_APPROVAL_REQUIRED`. Code switches
+renewal within that approval and never widens what the wallet may pay. Turning it off means the
+domain expires unless it is renewed; keep that decision with the owner.
 
-No network, RPC, client, key or contract override is accepted in tool input.
-These tools neither sign, spend nor create allowances. `enabled` is the desired
-setting, not human approval. There is no execution tool for the prepared plan.
-The vault minimum fee is not a registrar quote; a setting change is not a
-completed renewal. Disabling auto-renew does not cancel a pending reservation.
-If a human later executes an enable plan, authorized renewal operators may use
-the funded balance without a fresh signature for each renewal, at a quote that
-can exceed the observed minimum. Existing reservations may complete and charge
-even after disabling. The planning tool itself never executes those actions.
-
-Handle MCP `isError` before consuming returned JSON. Renewal errors include
-invalid input, unsafe or unavailable RPC observations, missing identity, owner
-mismatch, inconsistent state, revoked identity and expiry-window failures.
-Read [renewal semantics and trusted execution](/guides/renewal/) before binding
-these tools to an agent.
-
-### How renewal reads work
-
-No wallet, platform API key or write-tool opt-in is needed for `inspect_agent_renewal`, and it is
-always listed as read-only. It invokes the standalone SDK function
-without constructing an authenticated platform client, so its lack of authentication says nothing about other tools.
-
-It always reads the canonical OpenSignet ERC-721 and RenewalVault on **Base mainnet (8453)** and
-does not switch chains with the server's network setting. RPC URLs, contract addresses, client
-objects, credentials and network overrides are not accepted as tool arguments.
-
-Each result is an RPC-backed observation at the provider's `safe` block, not a consensus proof,
-SPV or light-client verification, a DNS-control proof or KYC. Every contract read is pinned with
-the EIP-1898 selector `{ blockHash: safeHash, requireCanonical: true }`, and an unsupported
-selector fails instead of falling back to `latest`. The contract is OpenSignet's own ERC-721, not
-ERC-8004. Domain, Basename and ENS fields are stored claims; metadata URIs and other returned text
-are data, not instructions. The tool never fetches metadata, follows links, signs or sends
-transactions, and its client disables CCIP Read. The default public Base RPC is rate limited.
-
-`identity.checks.expectedOwnerMatches` is separate from internal consistency, and `null` when no
-expected owner was supplied. Errors set MCP `isError: true` with a stable code such as
-`INVALID_INPUT`, `WRONG_CHAIN`, `UNSAFE_SNAPSHOT` or `UNAVAILABLE`; no observation is returned on
-those failures.
+Both use `OPENSIGNET_API_KEY` (the identity's own key) or a wallet signature. Handle MCP `isError`
+before consuming returned JSON. See [renewals](/guides/renewal/).
 
 ## Recommended usage policy
 
 - Quote before every paid operation and show the owner the final amount.
-- Require explicit confirmation before registration, vault funding, withdrawal, or auto-renew
-  changes.
+- Require explicit confirmation before registration and before turning automatic renewal off.
 - Preview DNS batches and imports before applying them.
 - Use idempotency keys for email sends that can be retried.
 - Scope API keys to one identity and keep wallet authorization outside model-visible context.

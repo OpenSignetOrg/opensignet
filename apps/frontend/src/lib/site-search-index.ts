@@ -43,7 +43,7 @@ const PAGES: ReadonlyArray<Omit<SiteSearchEntry, 'id' | 'kind'>> = [
     context: 'Register',
     href: '/register',
     summary:
-      'Search a name, choose your stack and register your domain with DNS, a professional inbox and an onchain AgentID.',
+      'Search a name, choose your stack and register your domain with DNS, a professional inbox and an OpenSignet Pass.',
     keywords:
       'register buy purchase get new domain name search availability check tld com ai xyz io org net co app identity email signup create',
   },
@@ -191,7 +191,7 @@ function planEntries(): Omit<SiteSearchEntry, 'id' | 'kind'>[] {
       title: 'Free plan',
       context: 'Pricing',
       href: '/pricing#pricing-plans',
-      summary: `Included with every domain: ${SERVICE_PLAN_CATALOG.included.limits.monthlyEmails.toLocaleString('en-US')} emails a month, a professional inbox, DNS and an AgentID.`,
+      summary: `Included with every domain: ${SERVICE_PLAN_CATALOG.included.limits.monthlyEmails.toLocaleString('en-US')} emails a month, a professional inbox, DNS and an OpenSignet Pass.`,
       keywords: 'free included no cost zero starter basic',
     },
     ...paid,

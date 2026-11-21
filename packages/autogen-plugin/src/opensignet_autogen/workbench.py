@@ -1,10 +1,11 @@
-"""Native Python AutoGen MCP integration. No wallet or transaction execution."""
+"""Native Python AutoGen MCP integration: read-only domain and renewal tools."""
 
 from __future__ import annotations
 
 import contextlib
 import json
 import os
+import re
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any, Mapping
@@ -16,14 +17,14 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StrictBool,
     StrictStr,
     ValidationError,
-    model_validator,
 )
 
 MCP_NPM_VERSION = version("opensignet-autogen")
-TOOL_NAMES = frozenset(("inspect_agent_renewal", "prepare_auto_renew_change"))
+TOOL_NAMES = frozenset(("check_domain_availability", "get_renewal_status"))
+# The identity's API key, as the dashboard shows it once: "osk_" and 43 base62 characters.
+API_KEY_PATTERN = re.compile(r"^osk_[0-9A-Za-z]{43}$")
 READ_TIMEOUT_SECONDS = 30
 MAX_ARGUMENT_BYTES = 16_384
 MAX_RESULT_BYTES = 1_048_576
@@ -67,8 +68,9 @@ def require_versions() -> None:
 
 
 def minimal_child_environment(
-    node: Path, source: Mapping[str, str] | None = None
+    node: Path, source: Mapping[str, str] | None = None, api_key: str | None = None
 ) -> dict[str, str]:
+    """OS plumbing, read-only mode and, only when the host passes one, the identity's key."""
     ambient = os.environ if source is None else source
     result = {
         key: ambient[key]
@@ -81,6 +83,11 @@ def minimal_child_environment(
     elif os.name != "nt":
         paths.extend(("/usr/bin", "/bin"))
     result["PATH"] = os.pathsep.join(paths)
+    result["OPENSIGNET_ENABLE_WRITE_TOOLS"] = "false"
+    if api_key is not None:
+        if not API_KEY_PATTERN.fullmatch(api_key):
+            raise ValueError("The API key is not an OpenSignet API key (osk_...)")
+        result["OPENSIGNET_API_KEY"] = api_key
     return result
 
 
@@ -89,6 +96,7 @@ def server_parameters(
     *,
     installed_package: Path | None = None,
     source_checkout: Path | None = None,
+    api_key: str | None = None,
 ) -> StdioServerParams:
     """Only owner-supplied trusted paths, never model/tool-result launch config."""
     require_versions()
@@ -125,45 +133,33 @@ def server_parameters(
         command=str(node),
         args=[str(entry)],
         cwd=str(package),
-        env=minimal_child_environment(node),
+        env=minimal_child_environment(node, api_key=api_key),
         read_timeout_seconds=READ_TIMEOUT_SECONDS,
     )
 
 
-class IdentityInput(BaseModel):
+UUID_PATTERN = (
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+class AvailabilityInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    domain: StrictStr | None = Field(default=None, min_length=1, max_length=253)
-    tokenId: StrictStr | None = Field(default=None, pattern=r"^[1-9][0-9]{0,77}$")
-    expectedOwner: StrictStr | None = Field(
-        default=None, pattern=r"^0x[a-fA-F0-9]{40}$"
+    name: StrictStr = Field(
+        min_length=1, max_length=63, pattern=r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
     )
-
-    @model_validator(mode="after")
-    def exactly_one_subject(self) -> "IdentityInput":
-        if (self.domain is None) == (self.tokenId is None):
-            raise ValueError("Supply domain XOR decimal tokenId")
-        if self.tokenId is not None and int(self.tokenId) >= 2**256:
-            raise ValueError("tokenId exceeds uint256")
-        if self.domain is not None and (
-            self.domain != self.domain.strip()
-            or any(char in self.domain for char in "/:@?#\\")
-        ):
-            raise ValueError("A domain is not a URL")
-        return self
+    tld: StrictStr = Field(min_length=2, max_length=24, pattern=r"^[a-z]+$")
 
 
-class PrepareInput(BaseModel):
+class AgentInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    tokenId: StrictStr = Field(pattern=r"^[1-9][0-9]{0,77}$")
-    expectedOwner: StrictStr = Field(pattern=r"^0x[a-fA-F0-9]{40}$")
-    enabled: StrictBool
-    builderCode: StrictStr = Field(pattern=r"^[a-z0-9_]{1,32}$")
+    agentId: StrictStr = Field(pattern=UUID_PATTERN)
 
-    @model_validator(mode="after")
-    def valid_token(self) -> "PrepareInput":
-        if int(self.tokenId) >= 2**256:
-            raise ValueError("tokenId exceeds uint256")
-        return self
+
+INPUTS: dict[str, type[BaseModel]] = {
+    "check_domain_availability": AvailabilityInput,
+    "get_renewal_status": AgentInput,
+}
 
 
 def error_result(name: str, code: str) -> ToolResult:
@@ -175,7 +171,7 @@ def error_result(name: str, code: str) -> ToolResult:
 
 
 class OpenSignetWorkbench(McpWorkbench):
-    """Real McpWorkbench with an enforced read/prepare-only tool allowlist."""
+    """Real McpWorkbench with an enforced read-only tool allowlist."""
 
     def _to_config(self):
         # The inherited provider name points to the unfiltered McpWorkbench.
@@ -214,10 +210,7 @@ class OpenSignetWorkbench(McpWorkbench):
                 > MAX_ARGUMENT_BYTES
             ):
                 return error_result(name, "INPUT_TOO_LARGE")
-            schema = (
-                PrepareInput if name == "prepare_auto_renew_change" else IdentityInput
-            )
-            parsed = schema.model_validate(raw).model_dump(exclude_none=True)
+            parsed = INPUTS[name].model_validate(raw).model_dump()
         except (ValidationError, ValueError, TypeError):
             return error_result(name, "INVALID_INPUT")
         # Annotations and model instructions are not authorization controls.
@@ -226,9 +219,7 @@ class OpenSignetWorkbench(McpWorkbench):
 
 def result_json(result: ToolResult) -> dict[str, Any]:
     if result.is_error:
-        raise RuntimeError(
-            f"{result.name} failed; no successful observation or plan was produced"
-        )
+        raise RuntimeError(f"{result.name} failed; nothing was confirmed")
     if len(result.result) != 1 or not isinstance(result.result[0], TextResultContent):
         raise RuntimeError("Expected one JSON text tool result")
     text = result.result[0].content
@@ -240,81 +231,49 @@ def result_json(result: ToolResult) -> dict[str, Any]:
     return value
 
 
-async def inspect_and_prepare(
-    workbench: OpenSignetWorkbench,
-    subject: Mapping[str, Any],
-    *,
-    enabled: bool | None = None,
-    builder_code: str | None = None,
-) -> dict[str, Any]:
-    request = IdentityInput.model_validate(dict(subject)).model_dump(exclude_none=True)
-    if enabled is not None and (
-        type(enabled) is not bool
-        or not builder_code
-        or not request.get("expectedOwner")
-    ):
-        raise ValueError(
-            "Preparation requires explicit enabled, expectedOwner and builderCode"
-        )
-    required = {"inspect_agent_renewal"}
-    if enabled is not None:
-        required.add("prepare_auto_renew_change")
-    available = {tool["name"] for tool in await workbench.list_tools()}
-    if not required.issubset(available):
+async def _require(workbench: OpenSignetWorkbench, name: str) -> None:
+    if name not in {tool["name"] for tool in await workbench.list_tools()}:
         raise RuntimeError(
-            f"Required tools are missing. Install MCP {MCP_NPM_VERSION} after publication "
-            "or build the reviewed public source."
+            f"{name} is missing. Install MCP {MCP_NPM_VERSION} or build the reviewed "
+            "public source."
         )
-    # The renewal observation carries the identity, read at the same block.
-    renewal = result_json(await workbench.call_tool("inspect_agent_renewal", request))
-    identity = renewal.get("identity", {})
-    report: dict[str, Any] = {
+
+
+async def domain_availability(
+    workbench: OpenSignetWorkbench, name: str, tld: str
+) -> dict[str, Any]:
+    """Whether `name.tld` can be registered, with its price."""
+    request = AvailabilityInput.model_validate({"name": name, "tld": tld}).model_dump()
+    await _require(workbench, "check_domain_availability")
+    answer = result_json(
+        await workbench.call_tool("check_domain_availability", request)
+    )
+    if not isinstance(answer.get("available"), bool):
+        raise RuntimeError("The availability answer is incomplete")
+    return answer
+
+
+async def renewal_report(
+    workbench: OpenSignetWorkbench, agent_id: str
+) -> dict[str, Any]:
+    """How the identity's domain renews, and the one thing to do next if it would not."""
+    request = AgentInput.model_validate({"agentId": agent_id}).model_dump()
+    await _require(workbench, "get_renewal_status")
+    status = result_json(await workbench.call_tool("get_renewal_status", request))
+    issue = status.get("issue")
+    if (
+        str(status.get("agentId", "")).lower() != agent_id.lower()
+        or type(status.get("autoRenew")) is not bool
+        or type(status.get("ready")) is not bool
+        or (status["ready"] is False and not isinstance(issue, dict))
+    ):
+        raise RuntimeError(
+            "The renewal answer is for another identity or is incomplete"
+        )
+    next_step = issue.get("message") if isinstance(issue, dict) else None
+    return {
         "mode": "read_only",
-        "identity": identity,
-        "ownerReview": None,
+        "renewal": status,
+        "ready": status["ready"],
+        "nextStep": None if status["ready"] else next_step,
     }
-    if renewal.get("status") != "found":
-        return report
-    report["renewal"] = renewal
-    if enabled is not None:
-        if (
-            identity.get("consistent") is not True
-            or identity.get("checks", {}).get("expectedOwnerMatches") is not True
-        ):
-            raise RuntimeError("Identity/expected owner mismatch; no change prepared")
-        proposed = {
-            "tokenId": identity["tokenId"],
-            "expectedOwner": request["expectedOwner"],
-            "enabled": enabled,
-            "builderCode": builder_code,
-        }
-        plan = result_json(
-            await workbench.call_tool("prepare_auto_renew_change", proposed)
-        )
-        if (
-            plan.get("kind") != "set_auto_renew"
-            or plan.get("chainId") != 8453
-            or plan.get("transaction", {}).get("value") != "0"
-            or plan.get("tokenId") != proposed["tokenId"]
-            or str(plan.get("expectedOwner", "")).lower()
-            != proposed["expectedOwner"].lower()
-            or type(plan.get("enabled")) is not bool
-            or plan["enabled"] != enabled
-            or plan.get("builderCode") != builder_code
-        ):
-            raise RuntimeError("Unexpected unsigned renewal-setting plan")
-        report["ownerReview"] = {
-            "required": True,
-            "plan": plan,
-            "nextStep": (
-                "Review separately in a trusted owner-wallet host. "
-                "This connector cannot sign or execute."
-            ),
-        }
-    report["effects"] = {
-        "signed": False,
-        "broadcast": False,
-        "fundsMoved": False,
-        "registrarRenewalConfirmed": False,
-    }
-    return report

@@ -133,7 +133,7 @@ export async function validateMachineDocuments(documents: Record<string, unknown
   let operationCount = 0;
   for (const [path, methods] of Object.entries(openapi.paths)) {
     assert.match(path, /^\/api\/v1(?:\/|$)/);
-    assert.doesNotMatch(path, /inspect|prepare|auto.?renew|execute|\/admin|\/internal/i);
+    assert.doesNotMatch(path, /inspect|prepare|execute|\/admin|\/internal/i);
     for (const [method, operation] of Object.entries(methods)) {
       assert.ok(operation);
       operationCount++;
@@ -184,18 +184,30 @@ export async function validateMachineDocuments(documents: Record<string, unknown
   assert.ok(!index.sdk.exports.includes('inspectAgentIdentity'), 'Removed SDK export');
   for (const name of ['search', 'setRegistryVisibility'])
     assert.ok(!index.sdk.openSignetMethods.includes(name), `Removed SDK method: ${name}`);
+  // The onchain vault is retired; renewal is read and switched through the API.
   for (const name of [
     'inspectAgentRenewal',
     'prepareAutoRenewChange',
     'executeAutoRenewChange',
     'confirmAutoRenewChange',
   ])
-    assert.ok(index.sdk.exports.includes(name), `Missing SDK source export: ${name}`);
-  for (const name of ['inspect_agent_renewal', 'prepare_auto_renew_change'])
-    assert.ok(
-      index.mcp.tools.some((tool) => tool.name === name && tool.readOnly && tool.defaultEnabled),
-      `Missing default read-only MCP tool: ${name}`,
-    );
+    assert.ok(!index.sdk.exports.includes(name), `Retired SDK export: ${name}`);
+  for (const name of ['getRenewal', 'setAutoRenew', 'getServicePlan'])
+    assert.ok(index.sdk.openSignetMethods.includes(name), `Missing SDK method: ${name}`);
+  assert.ok(
+    index.mcp.tools.some(
+      (tool) => tool.name === 'get_renewal_status' && tool.readOnly && tool.defaultEnabled,
+    ),
+    'Missing default read-only MCP tool: get_renewal_status',
+  );
+  assert.ok(
+    index.mcp.tools.some(
+      (tool) => tool.name === 'set_auto_renew' && !tool.readOnly && !tool.defaultEnabled,
+    ),
+    'set_auto_renew must be an opt-in write tool',
+  );
+  for (const name of ['inspect_agent_renewal', 'prepare_auto_renew_change', 'fund_renewal_vault'])
+    assert.ok(!index.mcp.tools.some((tool) => tool.name === name), `Retired MCP tool: ${name}`);
   return {
     files: Object.keys(documents).length,
     pages: index.documents.length,

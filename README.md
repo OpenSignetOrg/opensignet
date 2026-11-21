@@ -4,7 +4,7 @@ OpenSignet is the agent-native identity and communications infrastructure.
 
 Built for developers, people working through agents, and autonomous workflows,
 OpenSignet makes identity and communication programmable through APIs, SDKs,
-and agent integrations. Domains, DNS, email, AgentID, optional Basename or ENS,
+and agent integrations. Domains, DNS, email, the OpenSignet Pass, optional Basename or ENS,
 and x402 payments support that foundation.
 
 - Website: [opensignet.com](https://opensignet.com)
@@ -43,40 +43,32 @@ npm install @opensignet/sdk@0.1.0
 Until then, build the packages from this repository (see [Development](#development)). Release
 history is recorded in [CHANGELOG.md](CHANGELOG.md).
 
-## Lifecycle workflow
+## Renewal
 
-The SDK and MCP server include renewal observations and unsigned planning.
+Domains renew automatically by default. OpenSignet charges each renewal when it falls due, 30 to
+7 days before the domain expires, from the account's OpenSignet wallet balance or its saved card,
+and renews the domain at the registrar once. Code can read how a domain renews and switch it on
+or off:
 
-- `inspectAgentRenewal` reads identity and RenewalVault state at one canonical
-  Base safe-block hash, including available/reserved USDC, timing and flags,
-  without platform credentials or a wallet. Missing identities, RPC errors, owner
-  mismatches and inconsistent records remain distinct.
-- `prepareAutoRenewChange` creates an unsigned, attributed setting transaction.
-  `executeAutoRenewChange` requires a separate host-provided human approval
-  callback; `confirmAutoRenewChange` checks the actual transaction and safe
-  readback. Uncertain submissions are not automatically resent.
-- The verification view adds read-only renewal observations. The framework
-  flows stop at inspection or unsigned preparation, without wallet execution.
+- `getRenewal` (SDK) and `get_renewal_status` (MCP and every framework plugin) report whether a
+  domain renews, how it is paid, its price, the charge window and the first thing in the way.
+- `setAutoRenew` (SDK) and `set_auto_renew` (MCP write tool, AgentKit, ElizaOS, and LangChain as
+  a host opt-in) turn it on or off. Renewing from the OpenSignet wallet needs the owner's
+  approval once, on opensignet.com; code can switch renewal within it but never widen what the
+  wallet may pay.
 
-These are RPC observations, not consensus proofs or verification of linked
-Basename/ENS ownership. The minimum vault fee is not a registrar quote, and
-changing auto-renew does not itself renew a domain. Enabling permits authorized
-renewal operators to use funded vault balances without a new signature for each
-renewal; disabling does not cancel an existing reservation.
+| New integration                              | Implementation                                                                       |
+| -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [LangChain](packages/langchain-plugin)       | TypeScript tools using `@langchain/core`; the renewal switch is a host opt-in.       |
+| [CrewAI](packages/crewai-plugin)             | Standalone read-only Python tools using official core-native MCP APIs.               |
+| [Microsoft AutoGen](packages/autogen-plugin) | Standalone guarded Python `McpWorkbench` for domain availability and renewal status. |
 
-| New integration                              | Implementation                                                                        |
-| -------------------------------------------- | ------------------------------------------------------------------------------------- |
-| [LangChain](packages/langchain-plugin)       | TypeScript tools using `@langchain/core`; unsigned planning is a host opt-in.         |
-| [CrewAI](packages/crewai-plugin)             | Standalone Python tools using official core-native MCP APIs.                          |
-| [Microsoft AutoGen](packages/autogen-plugin) | Standalone guarded Python `McpWorkbench` for identity, renewal and unsigned planning. |
-
-The deterministic framework tests need no paid model and submit no live wallet
-transactions. The optional CrewAI recipe retains known Chroma dependency
+The deterministic framework tests need no paid model, live account or wallet. The optional CrewAI recipe retains known Chroma dependency
 advisories; passing its isolated tests is not a clean security audit. Read the
 [scoped security note](packages/mcp-server/examples/crewai/README.md#security-note)
 before using the Python integration.
 See the [renewal guide](apps/docs/src/content/docs/guides/renewal.mdx)
-for the approval and billing boundaries.
+for how renewals are charged and approved.
 
 ## Documentation for tools
 

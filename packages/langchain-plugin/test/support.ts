@@ -21,12 +21,6 @@ export function invokeUntyped(tool: Tool, input: unknown): Promise<unknown> {
   return invoke.call(tool, input);
 }
 
-/** Narrows an observation after asserting that the identity was found. */
-export function found<T extends { status: string }>(data: T): Extract<T, { status: 'found' }> {
-  assert.equal(data.status, 'found');
-  return data as Extract<T, { status: 'found' }>;
-}
-
 export interface ObjectSchema {
   type?: unknown;
   required?: string[];

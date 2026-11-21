@@ -24,7 +24,7 @@ export const HOME_FAQS: readonly FaqItem[] = [
   {
     question: 'What do I get when I register?',
     answer:
-      'A real domain with managed DNS, a professional inbox on that domain, and an AgentID on Base that proves ownership. A Basename on Base and an ENS name on Ethereum are optional.',
+      'A real domain with managed DNS, a professional inbox on that domain, and an OpenSignet Pass on Base, held by your account’s wallet, that links them. A Basename on Base and an ENS name on Ethereum are optional.',
   },
   {
     question: 'Which domain endings are supported?',
@@ -68,7 +68,7 @@ export const PRICING_FAQS: readonly FaqItem[] = [
   {
     question: 'What comes with the Free plan?',
     answer:
-      'Every account starts on it: up to 3 identities and 3,000 emails a month (sent and received combined) shared between them. Each identity gets a professional inbox, 1 email alias, 1 API key, 20 DNS records, 15-day message retention (30 days on paid plans) and an onchain AgentID. You pay only for each domain at its registrar price.',
+      'Every account starts on it: up to 3 identities and 3,000 emails a month (sent and received combined) shared between them. Each identity gets a professional inbox, 1 email alias, 1 API key, 20 DNS records, 15-day message retention (30 days on paid plans) and an OpenSignet Pass. You pay only for each domain at its registrar price.',
   },
   {
     question: 'How is the domain price set?',
@@ -115,7 +115,7 @@ export const SUPPORT_FAQS: readonly FaqItem[] = [
   {
     question: 'What does an OpenSignet identity include?',
     answer:
-      'A registered domain with DNS and a professional inbox, an onchain AgentID on Base, and optional Basename and ENS names. Developers, people guiding agents and permissioned autonomous workflows can all manage it.',
+      'A registered domain with DNS and a professional inbox, an OpenSignet Pass on Base, and optional Basename and ENS names. Developers, people guiding agents and permissioned autonomous workflows can all manage it.',
   },
   {
     question: 'How do I sign in?',
@@ -164,7 +164,7 @@ export const REGISTER_FAQS: readonly FaqItem[] = [
   {
     question: 'What does a registration include?',
     answer:
-      'Your domain with managed DNS and a professional inbox on that domain. The onchain AgentID, and Basenames and ENS names as optional extras, open soon.',
+      'Your domain with managed DNS and a professional inbox on that domain. The OpenSignet Pass, and Basenames and ENS names as optional extras, open soon.',
   },
   {
     question: 'Which domain endings can I choose?',

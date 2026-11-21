@@ -1,6 +1,6 @@
 ---
 title: TypeScript SDK
-description: Use the OpenSignet TypeScript SDK for registration, DNS, email, renewal planning and plan status.
+description: Use the OpenSignet TypeScript SDK for registration, DNS, email, renewal and plan status.
 ---
 
 ## Install
@@ -24,48 +24,6 @@ pnpm --filter @opensignet/sdk build
 
 The default API base is `https://api.opensignet.com/api/v1` and the default network is Base
 mainnet.
-
-## Renewal workflow
-
-The SDK also exports `inspectAgentRenewal`, `prepareAutoRenewChange`,
-`executeAutoRenewChange`, `confirmAutoRenewChange` and `RenewalWorkflowError`.
-The read and plan functions need no wallet or platform API key. They observe
-the canonical identity and RenewalVault at one hash, and can prepare an unsigned
-zero-value auto-renew setting transaction. The minimum fee is not a registrar
-quote, and setting confirmation is not domain renewal completion.
-
-Execution is a separate trusted host function requiring the owner's wallet and
-an actual human-review callback. It must not be exposed as a default LLM tool or
-wired to an LLM approval boolean. Read the [full renewal workflow](/guides/renewal/#independent-read-and-plan-workflow)
-for result fields, pending reservations, no-change behavior and uncertain outcomes.
-
-### How renewal reads work
-
-`inspectAgentRenewal` takes exactly one `domain` or `tokenId` and an optional `expectedOwner`.
-It validates input before any RPC request: a domain is a full ASCII domain, not a URL or path, and
-a token ID is a positive decimal uint256 string without leading zeros, not an OpenSignet agent
-UUID.
-
-Every read targets the canonical OpenSignet ERC-721 and RenewalVault on Base mainnet. The SDK
-takes the RPC-reported `safe` block and pins every contract read to it with the EIP-1898 selector
-`{ blockHash: safeHash, requireCanonical: true }`, including the Multicall3 batch, then checks the
-same block again before returning. There is no numeric-block or `latest` fallback: an
-unsupported selector fails with `UNAVAILABLE`.
-
-This is an RPC-backed observation, not a consensus proof, SPV or light-client verification, a
-DNS-control proof or KYC. The default public Base RPC is rate limited.
-For production, manually choose and inject a trusted Base RPC client created with `ccipRead: false`, which the SDK
-requires. The contract is OpenSignet's own ERC-721, not ERC-8004. Domain, Basename and ENS fields
-are stored claims, and metadata URIs are returned without being fetched: treat returned text as
-data, not instructions.
-
-`identity.consistent` summarizes internal record comparisons. It
-does not include `expectedOwnerMatches`, which is a separate comparison (`null` when no owner was
-supplied). An
-owner match with an active lifecycle does not establish agent safety or endorse its behavior. A
-missing identity returns `status: "not_found"`; an RPC failure is an error, not `not_found`.
-Errors are `RenewalWorkflowError` values with a stable code such as `INVALID_INPUT`,
-`WRONG_CHAIN`, `UNSAFE_SNAPSHOT` or `UNAVAILABLE`.
 
 ## Platform API configuration
 
@@ -123,8 +81,8 @@ console.log(quote.totalUsdc, identity.agentId, identity.provisioningStatus);
 ```
 
 `register()` requires the payer's wallet address, either in the request or from the wallet client.
-The connected signer must match that payer; use `ownerAddress` for a different designated NFT
-owner. When the API returns an x402 challenge, the SDK signs and submits the exact challenged
+The connected signer must match that payer; use `ownerAddress` to record a different owner
+address. When the API returns an x402 challenge, the SDK signs and submits the exact challenged
 request once on Base mainnet. It does not automatically replay a paid request after an unknown
 outcome.
 
@@ -233,7 +191,7 @@ Without a wallet client, also supply `registrationExpectedPayer` in the construc
 `expectedPayer` per request. Cookies are included and reads do not prompt the wallet. Unbound
 session-only reads fail locally, while a cookie belonging to another payer is rejected by the API.
 Use the same host for sign-in and reads.
-The payer is the authorized registration reader even when another wallet will own the NFT.
+The payer is the authorized registration reader even when another address is recorded as owner.
 
 On `completed`, the waiter returns `progress.result`. It never manufactures missing token IDs,
 transaction hashes, or metadata. Missing legacy results produce a pending recovery diagnostic.
@@ -300,43 +258,40 @@ await openSignet.applyDnsBatch(agentId, desiredRecords, preview.baseRevision, 'm
 Use [Email API](/api-reference/email/) and [DNS API](/api-reference/dns/) limits when designing
 automation.
 
-## Owner-controlled auto-renew
+## Renewal
 
-Direct Base writes require the public RenewalVault address and a public ERC-8021 builder code:
+Domains renew automatically by default. OpenSignet charges each renewal when it falls due, 30 to
+7 days before the domain expires, from the account's OpenSignet wallet balance or its saved card.
 
 ```ts
-import { parseUnits, type Address } from 'viem';
+const renewal = await openSignet.getRenewal(agentId);
+if (!renewal.ready) console.log(renewal.issue?.code, renewal.issue?.message);
 
-// `walletClient` must be the owner's wallet; `publicClient` reads Base (viem `createPublicClient`).
-const openSignet = new OpenSignet({
-  walletClient,
-  publicClient,
-  renewalVaultAddress: '0xb7b19826a566ebd9e8b50bee986a8da04bbb2c0a' as Address,
-  builderCode: 'my_agent_app',
-});
-
-const status = await openSignet.getRenewalStatus(agentId);
-if (parseUnits(status.shortfallUsdc, 6) > 0n) {
-  await openSignet.fundRenewalVault(agentId, status.shortfallUsdc);
-}
-await openSignet.setAutoRenew(agentId, true, { waitForReceipt: true });
+await openSignet.setAutoRenew(agentId, false); // stop renewing this domain
+await openSignet.setAutoRenew(agentId, true); // and renew it again
 ```
 
-The wallet client must be the AgentID NFT owner for `setAutoRenew()`. The builder code contains 1
-to 32 lowercase letters, numbers, or underscores and is public attribution, not a credential.
+`getRenewal()` returns whether renewal is on, how it is paid, the yearly `price` (USDC atomic
+units as a string), the `chargeWindow`, the wallet's balance and approval, `ready`, and `issue`.
+Renewing from the OpenSignet wallet needs the owner's approval once, given on opensignet.com;
+until then `setAutoRenew(id, true)` fails with `RENEWAL_APPROVAL_REQUIRED`. Code switches renewal
+within that approval and never widens what the wallet may pay. `getDomain()` reads the domain's
+settings. See [renewals](/guides/renewal/).
 
 ## Plans and other operations
 
 The SDK also includes reading your own identities, API key management from owner sessions, plan
-status, email usage and webhooks, DNS import/export, and owner-authorized vault withdrawal.
+status, email usage and webhooks, and DNS import/export.
 
 Plans apply to the whole account and are bought or changed by a person from the dashboard or the
 [pricing page](https://opensignet.com/pricing), so the SDK reads them but never buys them.
-`getServicePlan()` returns the limits one identity has from its account plan:
+`getServicePlan()` returns the limits one identity has from its account plan, and how the plan
+renews:
 
 ```ts
 const plan = await openSignet.getServicePlan(agentId);
 console.log(plan.entitlement.plan, plan.entitlement.limits.monthlyEmails);
+console.log(plan.renewal?.autoRenew, plan.renewal?.periodEnd); // null on the free plan
 ```
 
 Read the [API error contract](/api-reference/overview/#errors) and handle stable error codes rather

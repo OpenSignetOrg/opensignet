@@ -397,7 +397,7 @@ export function runSelfTest(): void {
   assert.equal(repositoryScopeViolation('brand/logo/opensignet-logo.svg'), null);
   assert.equal(repositoryScopeViolation('brand-kit/logo.svg'), 'unapproved top-level directory');
   assert.equal(repositoryScopeViolation('apps/frontend/src/app/page.tsx'), null);
-  assert.equal(repositoryScopeViolation('contracts/src/PaymentRouter.sol'), null);
+  assert.equal(repositoryScopeViolation('contracts/src/OpenSignetPass.sol'), null);
   assert.equal(repositoryScopeViolation('packages/mcp-server/src/index.ts'), null);
   assert.equal(repositoryScopeViolation('packages/langchain-plugin/src/index.ts'), null);
   assert.equal(repositoryScopeViolation('packages/crewai-plugin/pyproject.toml'), null);
@@ -419,7 +419,7 @@ export function runSelfTest(): void {
     'unapproved public application root',
   );
   assert.equal(
-    repositoryScopeViolation('packages/contracts/src/PaymentRouter.sol'),
+    repositoryScopeViolation('packages/contracts/src/OpenSignetPass.sol'),
     'unapproved public package root',
   );
   assert.equal(

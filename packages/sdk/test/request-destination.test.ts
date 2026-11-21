@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { OpenSignet } from '../dist/index.js';
-import { fake, isRecord, jsonBody, requestUrl, type SdkWalletClient } from './helpers.ts';
+import { fake, jsonBody, requestUrl, type SdkWalletClient } from './helpers.ts';
 
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -67,16 +67,17 @@ const flows: Flow[] = [
   ['DNS export', (ad, id) => ad.exportDnsZone(id), '/dns/export', 'GET'],
   ['DNS batch', (ad, id) => ad.previewDnsBatch(id, []), '/dns/batch', 'POST'],
   ['DNS import', (ad, id) => ad.previewDnsImport(id, id), '/dns/import', 'POST'],
-  ['fund', (ad, id) => ad.fundRenewalVault(id, '1'), '/renewal/fund', 'POST'],
-  ['withdraw', (ad, id) => ad.withdrawFromVault(id, '1'), '/renewal/withdraw', 'POST'],
   ['agent read', (ad, id) => ad.getAgentById(id), '', 'GET'],
   ['DNS read', (ad, id) => ad.listDnsRecords(id), '/dns', 'GET'],
   ['DNS capabilities', (ad, id) => ad.getDnsCapabilities(id), '/dns/capabilities', 'GET'],
   ['mail usage', (ad, id) => ad.getEmailUsage(id), '/email/usage', 'GET'],
   ['webhook read', (ad, id) => ad.getEmailWebhook(id), '/email/webhook', 'GET'],
   ['webhook rotate', (ad, id) => ad.rotateEmailWebhookSecret(id), '/email/webhook', 'PATCH'],
-  ['renewal read', (ad, id) => ad.getRenewalStatus(id), '/renewal/status', 'GET'],
   ['plan read', (ad, id) => ad.getServicePlan(id), '/plan', 'GET'],
+  ['domain read', (ad, id) => ad.getDomain(id), '/domain', 'GET'],
+  ['renewal read', (ad, id) => ad.getRenewal(id), '/renewal', 'GET'],
+  ['renewal on', (ad, id) => ad.setAutoRenew(id, true), '/domain/auto-renew', 'POST'],
+  ['renewal off', (ad, id) => ad.setAutoRenew(id, false), '/domain/auto-renew/off', 'POST'],
 ];
 
 for (const [name, invoke, suffix, method] of flows) {
@@ -113,10 +114,7 @@ for (const [name, invoke, suffix, method] of flows) {
         if (name === 'webhook') assert.equal(jsonBody(init).url, id);
         return Response.json(fixture);
       };
-      await invoke(
-        new OpenSignet({ apiUrl, apiKey: 'fixture', walletClient, builderCode: 'test' }),
-        id,
-      );
+      await invoke(new OpenSignet({ apiUrl, apiKey: 'fixture', walletClient }), id);
       assert.equal(calls, 1);
     }
   });
@@ -206,35 +204,4 @@ test('registration read uses the trusted base, encoded ID, payer binding and red
     registrationExpectedPayer: payer,
   });
   await assert.rejects(ad.getRegistration(id), /HTTP 404/);
-});
-
-test('funding challenge and signed retry keep the same encoded destination and authorization', async () => {
-  const id = '../../admin?x=1';
-  let calls = 0;
-  globalThis.fetch = async (url, init) => {
-    assert.equal(url, `${apiUrl}/agents/${encodeURIComponent(id)}/renewal/fund`);
-    assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer fixture');
-    calls++;
-    if (calls === 1)
-      return Response.json(
-        {
-          scheme: 'eip3009',
-          chainId: 8453,
-          asset: payer,
-          payTo: payer,
-          maxAmountRequired: '1000000',
-          maxTimeoutSeconds: 300,
-        },
-        { status: 402 },
-      );
-    const body = jsonBody(init);
-    assert.equal(body.amount, '1');
-    assert.equal(body.signature, signature);
-    assert.ok(isRecord(body.authorization));
-    assert.equal(body.authorization.value, '1000000');
-    assert.equal(body.authorization.to, payer);
-    return Response.json(fixture);
-  };
-  await new OpenSignet({ apiUrl, apiKey: 'fixture', walletClient }).fundRenewalVault(id, '1');
-  assert.equal(calls, 2);
 });

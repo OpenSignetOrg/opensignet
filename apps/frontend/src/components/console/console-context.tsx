@@ -22,8 +22,8 @@ export interface ConsoleIdentity {
   domain: string;
   basename: string | null;
   ensName: string | null;
-  /** Null until the AgentID is minted. */
-  agentIdNft: number | null;
+  /** The identity's OpenSignet Pass token, or null until it is minted. */
+  passTokenId: number | null;
   status: string;
   framework: string | null;
   createdAt: string;

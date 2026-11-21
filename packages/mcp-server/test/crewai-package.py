@@ -23,7 +23,11 @@ import opensignet_crewai
 from opensignet_crewai import child_environment
 
 
-VERSION = tomllib.loads((Path(__file__).resolve().parents[2] / "crewai-plugin/pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+VERSION = tomllib.loads(
+    (Path(__file__).resolve().parents[2] / "crewai-plugin/pyproject.toml").read_text(
+        encoding="utf-8"
+    )
+)["project"]["version"]
 DIST_INFO = f"opensignet_crewai-{VERSION}.dist-info"
 MODULE_FILES = {
     "opensignet_crewai/__init__.py",
@@ -131,9 +135,7 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(opensignet_crewai.__version__, VERSION)
         root = Path(sysconfig.get_path("purelib")).resolve(strict=True)
         assert opensignet_crewai.__file__ is not None
-        self.assertTrue(
-            Path(opensignet_crewai.__file__).resolve().is_relative_to(root)
-        )
+        self.assertTrue(Path(opensignet_crewai.__file__).resolve().is_relative_to(root))
         direct_url = distribution.read_text("direct_url.json")
         self.assertIsNotNone(
             direct_url, "Install the reviewed local wheel for qualification"
@@ -160,9 +162,7 @@ class PackageTests(unittest.TestCase):
 
     def test_installed_console_and_module_work_outside_source_checkout(self):
         script = Path(sysconfig.get_path("scripts")) / (
-            "opensignet-crewai.exe"
-            if sys.platform == "win32"
-            else "opensignet-crewai"
+            "opensignet-crewai.exe" if sys.platform == "win32" else "opensignet-crewai"
         )
         self.assertTrue(script.is_file())
         with tempfile.TemporaryDirectory(prefix="opensignet-crewai-consumer-") as cwd:
@@ -180,8 +180,8 @@ class PackageTests(unittest.TestCase):
                     check=False,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("--expected-owner", result.stdout)
-                self.assertIn("--setting", result.stdout)
+                self.assertIn("--agent-id", result.stdout)
+                self.assertIn("--api-key-env", result.stdout)
                 self.assertNotIn("--private-key", result.stdout)
 
 

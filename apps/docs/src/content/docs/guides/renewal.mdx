@@ -1,164 +1,105 @@
 ---
-title: Renewals and auto-renew
-description: Fund an identity renewal vault and authorize owner-controlled auto-renew on Base.
+title: Renewals
+description: How domains and plans renew from the OpenSignet wallet or a card, and how to read and switch renewal from code.
 ---
 
-Each AgentID token has an independent RenewalVault balance. Any wallet can fund that balance. Only
-the wallet that holds the AgentID NFT can enable auto-renew or withdraw unused funds, for example
-your account's OpenSignet wallet or a wallet linked to the account.
+Domains renew automatically by default. OpenSignet charges each renewal when it falls due and
+renews the domain at the registrar once. Nothing is deposited ahead of time and no onchain
+setting is involved.
 
-Reading renewal status uses the same authentication as other identity management: an API key
-scoped to the identity, or a signed-in session of the account that owns it. Vault deposits,
-withdrawals and auto-renew changes are always signed by a wallet.
+## How a domain renews
 
-## Independent read and plan workflow
+- **When:** the renewal is charged from 30 days until 7 days before the domain expires, so the
+  registrar always has time. The domain's expiry then moves forward one year and the owner gets a
+  receipt.
+- **How it's paid:** from the account's OpenSignet wallet balance (USDC on Base), or from the
+  account's saved card. The owner chooses per domain in the dashboard.
+- **From the wallet:** the owner approves once, while signed in on opensignet.com, that the wallet
+  may pay this domain's renewals. The wallet then signs each renewal only when it falls due, only
+  to OpenSignet, and never above a quarter more than today's price. No funds are locked and no
+  token allowance is granted.
+- **If it can't be paid:** nothing is charged, and the owner is reminded 30, 7 and 1 day before
+  the domain expires. A registrar refusal after payment is marked for refund, never retried blindly.
+- **Turned off:** the domain expires unless it is renewed. The owner is still reminded before it
+  does.
 
-The SDK includes the standalone renewal workflow: Base-only reads and unsigned planning without
-constructing an authenticated platform client. Install it using the
-[TypeScript setup](/sdk/typescript/#install).
+Plans renew the same way: a card plan renews through the card; a USDC plan renews from the
+OpenSignet wallet within the owner's approval, charged from 3 days before the plan's period ends,
+with reminders 14, 7 and 1 day before. Plans cover the whole account and are changed by a person
+on opensignet.com.
 
-```ts
-import { inspectAgentRenewal, prepareAutoRenewChange } from '@opensignet/sdk';
+## Read the renewal
 
-const renewal = await inspectAgentRenewal({ tokenId: '1' });
-if (renewal.status === 'found') {
-  console.log(renewal.identity.block, renewal.vault, renewal.checks);
-}
-
-const plan = await prepareAutoRenewChange({
-  tokenId: '1',
-  expectedOwner: '0x1111111111111111111111111111111111111111',
-  enabled: true,
-  builderCode: 'my_agent_app',
-});
-console.log(plan.id, plan.transaction, plan.noChange, plan.warnings);
+```http
+GET /api/v1/agents/:id/renewal
 ```
 
-The values are illustrative, not assertions of ownership. The preparation call
-checks the expected NFT owner and consistent current state and can fail. It
-does not approve or execute a transaction. `enabled` describes the proposed
-auto-renew setting; it is not an approval flag.
+Use an API key scoped to the identity, a wallet request signature from the owning account, or the
+owner's signed-in session.
 
-### Read semantics
-
-`inspectAgentRenewal` accepts exactly one domain or token ID and an optional
-expected owner.
-It returns JSON-safe `found` or `not_found` data. A found result includes the
-identity observation, canonical vault address, balances, reservation, timing,
-auto-renew flag, contract pointers and checks. Integer amounts and timestamps
-are decimal strings. Use integer arithmetic for atomic USDC amounts.
-
-Identity and vault reads use the same EIP-1898 safe block hash with
-`requireCanonical: true`. The RPC must support that selector; the SDK does not
-fall back to numeric or `latest` state. The default and injected clients must
-disable CCIP Read, and metadata is not fetched. These are RPC observations,
-not independent consensus, DNS ownership or KYC proofs.
-
-`minimumFeeAtomicUsdc` is the vault's minimum accepted fee, **not a registrar
-quote or the complete renewal price**. `availableCoversMinimum` does not mean
-the actual quote is funded. `withinRenewalWindow`, `minimumFeeConfigured` and
-`availableCoversMinimum` are separate checks, not the definition of
-`consistent`. The native `isRenewable` flag is a timing/state predicate, not a
-funding guarantee. Reserved funds remain distinct from available funds.
-
-### Unsigned plan
-
-`prepareAutoRenewChange` requires a positive decimal uint256 `tokenId`, an
-`expectedOwner` address, boolean `enabled`, and a public builder code of 1 to 32
-lowercase letters, digits or underscores. Its plan contains `version`,
-`kind: "set_auto_renew"`, `id`, `chainId: 8453`, the requested primitives,
-the observation, `transaction: { to, data, value: "0" }`, `noChange` and warnings.
-
-Preparation never spends, signs, creates a token allowance, calls a registrar
-or queues a renewal. Enabling is rejected for revoked identities or those past
-the allowed renewal window. Disabling a setting does not cancel an existing
-pending reservation. A plan ID is a content binding, not authentication or a
-persistent exactly-once execution guarantee.
-
-### Trusted execution and confirmation
-
-The separate SDK `executeAutoRenewChange(plan, options)` helper is for trusted
-host code, not an LLM tool. Its options require the owner's wallet client and a
-real human-review callback `approve(plan)`. Do not implement this callback using
-a model-supplied boolean or unconditional approval. Show the owner the exact
-setting and transaction, retain the returned submission state, and keep the
-wallet outside model context. Enabling permits authorized renewal operators to
-use the funded vault without a new wallet signature for each renewal; the actual
-quote can exceed the minimum. The setting transaction has zero native value but
-still requires network gas. Disabling stops new reservations, while an existing
-pending reservation may still complete and charge the balance.
-
-The helper validates the plan and rechecks owner, chain and state around review.
-It does not automatically retry uncertain sends. Submitted, uncertain-send and
-rejected outcomes are retained by its in-process suppression, which is limited
-to the same plan object; reconstructing a plan or restarting the process does
-not provide durable idempotency. A settled `no_change` result is not retained:
-explicitly reusing that object performs fresh wallet, owner and flag checks and
-requires a new host approval if a change is now needed. An unknown outcome
-requires reconciliation, not automatic re-execution.
-
-`confirmAutoRenewChange(plan, transactionHash, options)` performs one read-only
-confirmation attempt. `pending`, `reverted` and `unverified` are not success.
-It checks the transaction's owner, vault, calldata and receipt against the plan,
-requires the receipt to be after the plan's recorded safe observation block,
-and checks the current safe flag. Same-height or older receipts return
-`unverified` with `TRANSACTION_MISMATCH`. This is not cryptographic proof that a
-particular human approved that serialized plan; human approval belongs to the
-trusted host execution workflow.
-Even `confirmed` means the auto-renew setting transaction was verified, **not**
-that the domain or external name renewal completed. It does not wait forever or
-rebroadcast. Keep registrar completion separate from onchain flag confirmation.
-
-The [MCP server](/sdk/mcp/) and framework integrations expose the two reads and
-unsigned planning, not this execution boundary. No REST endpoint for these
-standalone functions is advertised by the [OpenAPI catalog](/openapi.json).
-
-## Platform renewal operations
-
-The authenticated SDK client below is a separate platform workflow. Its
-pricing and funding operations must not be confused with the standalone vault
-minimum-fee observation.
-
-## Read the current requirement
-
-```ts
-const status = await openSignet.getRenewalStatus(agentId);
-console.log(status.nextRenewalAmountUsdc, status.shortfallUsdc, status.renewableFrom);
-```
-
-The current quote reflects the identity's selected services and current renewal pricing. Do not use
-an old registration total as the renewal amount.
-
-## Fund the shortfall
-
-```ts
-import { parseUnits } from 'viem';
-
-if (parseUnits(status.shortfallUsdc, 6) > 0n) {
-  await openSignet.fundRenewalVault(agentId, status.shortfallUsdc);
+```json
+{
+  "agentId": "11111111-1111-4111-8111-111111111111",
+  "domain": "northwind.ai",
+  "expiresAt": "2027-11-21T00:00:00Z",
+  "autoRenew": true,
+  "method": "wallet",
+  "price": "79000000",
+  "chargeWindow": { "opensAt": "2027-10-22T00:00:00Z", "closesAt": "2027-11-14T00:00:00Z" },
+  "wallet": { "address": "0x…", "balance": "12000000", "approved": true },
+  "cardSaved": false,
+  "ready": false,
+  "issue": {
+    "code": "wallet_balance_low",
+    "message": "The OpenSignet wallet holds less USDC than the renewal costs. Add USDC before the renewal is due."
+  }
 }
 ```
 
-Funding uses the connected wallet and does not transfer ownership. Re-read status after the funding
-transaction completes.
+Amounts are USDC atomic units (6 decimals) as strings; `price` is one year at the registrar's price.
+`ready` is true when nothing stands in the way. Otherwise `issue` names the first thing to fix:
 
-## Enable auto-renew
+| `issue.code`          | Meaning                                                        |
+| --------------------- | -------------------------------------------------------------- |
+| `not_registered`      | The domain is still being registered.                          |
+| `auto_renew_off`      | Automatic renewal is off.                                      |
+| `price_unavailable`   | The renewal price can't be read right now; nothing is charged. |
+| `approval_needed`     | The owner hasn't approved the wallet to pay this renewal yet.  |
+| `wallet_balance_low`  | The wallet holds less USDC than the renewal costs.             |
+| `balance_unavailable` | The wallet balance can't be read right now.                    |
+| `card_missing`        | Renewals are paid by card and no card is saved.                |
 
-```ts
-await openSignet.setAutoRenew(agentId, true, { waitForReceipt: true });
+## Switch it on or off
+
+```http
+POST /api/v1/agents/:id/domain/auto-renew
+POST /api/v1/agents/:id/domain/auto-renew/off
 ```
 
-The SDK requires:
+Both accept the same three ways in and return the domain's settings. Turning renewal on from code
+works within the owner's approval: until the owner has approved the wallet once on
+opensignet.com, an API key or wallet signature gets `409 RENEWAL_APPROVAL_REQUIRED`. Code can
+never widen what the wallet may pay. A domain renewed by card needs a saved card
+(`409 CARD_UNAVAILABLE`).
 
-- a wallet client for the AgentID NFT owner;
-- the current public RenewalVault address;
-- a public ERC-8021 builder code for direct Base transaction attribution;
-- a public client when `waitForReceipt` is enabled.
+## SDK
 
-See the complete constructor in the [TypeScript SDK guide](/sdk/typescript/#owner-controlled-auto-renew).
+```ts
+const renewal = await openSignet.getRenewal(agentId);
+if (!renewal.ready) console.log(renewal.issue?.message);
+
+await openSignet.setAutoRenew(agentId, false);
+await openSignet.setAutoRenew(agentId, true);
+
+const plan = await openSignet.getServicePlan(agentId);
+console.log(plan.renewal?.periodEnd);
+```
+
+The [MCP server](/sdk/mcp/) offers `get_renewal_status` (read-only) and `set_auto_renew` (a write
+tool). The [framework integrations](/frameworks/agentkit/) expose the same reads, and AgentKit,
+ElizaOS and LangChain (as a host opt-in) the switch.
 
 ## Monitor
 
-Check `expiresAt`, `renewableFrom`, `shortfallUsdc`, `isFunded`, and `autoRenewEnabled`. Funding does
-not guarantee renewal if the balance later becomes insufficient or an external name is no longer
-renewable. Keep an independent expiry alert for production identities.
+Read `ready` and `issue` regularly, or before `chargeWindow.opensAt`, and act on the message. Keep
+an independent expiry alert for production identities.

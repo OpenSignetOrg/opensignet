@@ -165,11 +165,10 @@ test('framework guides distinguish real language bridges and their publication s
       'utf8',
     );
     assert.match(source, /```python/);
-    assert.match(source, /inspect_agent_renewal/);
-    assert.doesNotMatch(source, /inspect_agent_identity/);
-    assert.match(source, /prepare_auto_renew_change/);
+    assert.match(source, /get_renewal_status/);
+    for (const retired of [/inspect_agent_identity/, /inspect_agent_renewal/, /prepare_auto_renew/])
+      assert.doesNotMatch(source, retired);
     assert.match(source, /publication|published/);
-    assert.match(source, /unsigned/i);
     assert.doesNotMatch(source, /## Coming soon/);
   }
 
@@ -196,8 +195,8 @@ test('framework guides pin 0.1.0, state it is unpublished and retain source deve
     assert.ok(source.includes(`from opensignet_${name} import`));
     assert.match(source, /For source development, install from the public repository root/);
     assert.match(source, /integration tests/);
-    assert.match(source, /synthetic RPC/);
-    assert.match(source, /no paid model or live\s+transaction/);
+    assert.match(source, /synthetic API/);
+    assert.match(source, /no paid model, live\s+account or wallet/);
     assert.doesNotMatch(source, /is published on|releases\/tag|passed scoped|release evidence/i);
   }
   for (const name of ['agentkit', 'elizaos']) {
@@ -211,20 +210,20 @@ test('framework guides pin 0.1.0, state it is unpublished and retain source deve
   assert.match(langchain, availability);
   assert.match(
     langchain,
-    /```bash\s+npm install @opensignet\/langchain-plugin@0\.1\.0 @langchain\/core@\^1\.2\.11\s+```/,
+    /```bash\s+npm install @opensignet\/langchain-plugin@0\.1\.0 @opensignet\/sdk@0\.1\.0 @langchain\/core@\^1\.2\.11\s+```/,
   );
   assert.doesNotMatch(langchain, /catalog records workspace versions|reviewed public repository/);
   assert.match(langchain, /For source development, build from the public repository root/);
   assert.match(langchain, /pnpm --filter @opensignet\/shared build/);
   assert.match(langchain, /pnpm --filter @opensignet\/sdk build/);
   assert.match(langchain, /pnpm --filter @opensignet\/langchain-plugin build/);
-  assert.match(langchain, /does not add an execution tool/);
+  assert.match(langchain, /never sign, pay or send transactions/);
   assert.doesNotMatch(langchain, /is published on|releases\/tag|OIDC|provenance/i);
   const renewal = await readFile(
     join(DOCS_ROOT, 'src', 'content', 'docs', 'guides', 'renewal.mdx'),
     'utf8',
   );
-  assert.match(renewal, /The SDK includes the standalone renewal workflow/);
+  assert.match(renewal, /openSignet\.getRenewal\(agentId\)/);
   assert.doesNotMatch(renewal, /source-build target|published SDK/);
 });
 
@@ -241,7 +240,7 @@ test('CrewAI guide matches the native helper and discloses the pinned Python dep
     'README.md',
     'requirements.in',
     'requirements.lock',
-    'tools["inspect_agent_renewal"], {"tokenId": token_id, "expectedOwner": owner}',
+    'report = renewal_report(tools, agent_id)',
     '.venv-native',
     '--require-hashes',
     'ChromaDB 1.1.1',
@@ -261,7 +260,7 @@ test('CrewAI guide matches the native helper and discloses the pinned Python dep
     'https://github.com/chroma-core/chroma/issues/6717',
   );
   assert.doesNotMatch(source, /MCPServerAdapter|from crewai_tools/);
-  assert.match(source, /reject explicit `null`/);
+  assert.match(source, /reject unexpected arguments/);
   assert.match(source, /opens and closes a local stdio client for each invocation/);
   assert.match(source, /risk is not limited to running an HTTP server/);
   assert.match(source, /not the installed library's safety/);

@@ -206,7 +206,7 @@ try {
               basename: null,
               ensName: null,
               ownerAddress: wallet,
-              agentIdNft: 1,
+              passTokenId: 1,
               status: 'active',
               framework: null,
               createdAt: '2026-01-01T00:00:00.000Z',
@@ -218,9 +218,7 @@ try {
             inbox: inbox(),
             publicConfig: {
               usdc: '0x' + '2'.repeat(40),
-              renewalVault: null,
               metadataGateway: 'https://example.test',
-              builderCode: null,
             },
           },
         });

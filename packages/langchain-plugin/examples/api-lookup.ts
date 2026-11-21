@@ -11,7 +11,10 @@ if (values.help) {
   console.log('node examples/api-lookup.ts --agent UUID');
   console.log('OPENSIGNET_API_KEY is optional host configuration, never a tool argument.');
 } else {
-  const apiClient = new OpenSignet({ apiKey: process.env.OPENSIGNET_API_KEY });
+  const apiClient = new OpenSignet({
+    apiUrl: process.env.OPENSIGNET_API_URL,
+    apiKey: process.env.OPENSIGNET_API_KEY,
+  });
   const lookup = createOpenSignetTools({ apiClient }).find(isLookup);
   try {
     if (!lookup || values.agent === undefined) throw new Error('A valid agent UUID is required.');

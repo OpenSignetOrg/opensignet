@@ -1,4 +1,4 @@
-import { OpenSignet, encodeSetAutoRenewCalldata } from '@opensignet/sdk';
+import { OpenSignet } from '@opensignet/sdk';
 import { OPENSIGNET_API_BASE_URL, SUPPORTED_TLDS } from '@opensignet/shared/constants';
 import {
   DNS_RECORD_TYPES,
@@ -6,7 +6,7 @@ import {
   type DnsRecordInput,
   registrantSchema,
 } from '@opensignet/shared';
-import { createPublicClient, createWalletClient, http, type Address } from 'viem';
+import { createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base, baseSepolia } from 'viem/chains';
 import { z } from 'zod';
@@ -28,48 +28,35 @@ interface Memory {
   content: { text: string };
 }
 
-/** Builds the attributed direct calldata used by Eliza's post-registration auto-renew step. */
-export function encodeElizaAutoRenewCalldata(tokenId: bigint, builderCode?: string) {
-  if (!builderCode) {
-    throw new Error('OPENSIGNET_BUILDER_CODE is required for attributed direct Base transactions.');
-  }
-  return encodeSetAutoRenewCalldata(tokenId, true, builderCode);
-}
-
 function getClients(runtime: IAgentRuntime, opts: { requireWallet?: boolean } = {}) {
   const apiUrl = runtime.getSetting('OPENSIGNET_API_URL') ?? OPENSIGNET_API_BASE_URL;
   const apiKey = runtime.getSetting('OPENSIGNET_API_KEY');
   const pk = runtime.getSetting('AGENT_PRIVATE_KEY');
   const rpc = runtime.getSetting('BASE_RPC_URL') ?? 'https://mainnet.base.org';
   const network = (runtime.getSetting('OPENSIGNET_NETWORK') as 'base' | 'base-sepolia') ?? 'base';
-  const builderCode = runtime.getSetting('OPENSIGNET_BUILDER_CODE');
   const chain = network === 'base-sepolia' ? baseSepolia : base;
 
   if (!pk) {
     if (opts.requireWallet) throw new Error('AGENT_PRIVATE_KEY not set');
-    const ad = new OpenSignet({ apiUrl, apiKey, network, builderCode });
-    return { ad, account: null, walletClient: null, publicClient: null, network, chain, rpc };
+    const ad = new OpenSignet({ apiUrl, apiKey, network });
+    return { ad, account: null, walletClient: null, network, chain, rpc };
   }
 
   const account = privateKeyToAccount(pk as `0x${string}`);
   const walletClient = createWalletClient({ account, chain, transport: http(rpc) });
-  const publicClient = createPublicClient({ chain, transport: http(rpc) });
 
   const ad = new OpenSignet({
     apiUrl,
     apiKey,
     network,
     walletClient: walletClient as never,
-    publicClient: publicClient as never,
-    builderCode,
   });
 
-  return { ad, account, walletClient, publicClient, network, chain, rpc };
+  return { ad, account, walletClient, network, chain, rpc };
 }
 
 const TLD_PATTERN = new RegExp(String.raw`([a-z0-9-]{3,63})\.([a-z]{2,20})\b`, 'i');
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
-const AMOUNT_PATTERN = /\$?\s*(\d+(?:\.\d{1,6})?)\s*(?:usdc)?/i;
 const EMAIL_USERNAME_PATTERN = /^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$/;
 
 const registerSchema = z.object({
@@ -116,21 +103,22 @@ function parseParamsFromText(text: string): {
     emailEnabled: true,
     emailUsername: parseEmailUsername(text) ?? 'hello',
     years: yearsMatch ? parseInt(yearsMatch[1]!, 10) : 1,
-    autoRenew:
-      lower.includes('auto renew') || lower.includes('auto-renew') || lower.includes('autorenew'),
+    // On by default, as everywhere in OpenSignet; off only when the request says so.
+    autoRenew: !declinesAutoRenew(text),
   };
+}
+
+/** "no auto-renew", "without auto renew", "auto-renew off", "don't auto renew" turn it off. */
+export function declinesAutoRenew(text: string): boolean {
+  return /\b(?:no|without|disable|don[’']t|do not)\b[^.]{0,20}\bauto[- ]?renew|\bauto[- ]?renew(?:al)?\s+(?:off|disabled)\b/i.test(
+    text,
+  );
 }
 
 function requireAgentId(text: string): string {
   const agentId = text.match(UUID_PATTERN)?.[0];
   if (!agentId) throw new Error('Agent ID UUID is required');
   return agentId;
-}
-
-function parseAmountUsdc(text: string): string {
-  const amount = text.match(AMOUNT_PATTERN)?.[1];
-  if (!amount) throw new Error('USDC amount is required');
-  return amount;
 }
 
 function parseDnsRecord(text: string) {
@@ -225,7 +213,7 @@ export const quoteRegistrationAction = {
 export const registerIdentityAction = {
   name: 'REGISTER_IDENTITY',
   description:
-    'Register a complete agent identity bundle on OpenSignet. Domain, DNS, email setup and AgentID NFT orchestration are included by default. Include the full domain. Users can say "with Basename" to add a Basename, "with ENS" to add ENS, and "email username support" to customize the primary inbox. Plans cover the whole account and are never bought during registration.',
+    'Register a complete agent identity bundle on OpenSignet. Domain, DNS, email setup and the OpenSignet Pass are included by default. Include the full domain. Users can say "with Basename" to add a Basename, "with ENS" to add ENS, and "email username support" to customize the primary inbox. Plans cover the whole account and are never bought during registration.',
   similes: ['CLAIM_DOMAIN', 'CREATE_IDENTITY', 'GET_DOMAIN'],
   examples: [
     [
@@ -245,10 +233,8 @@ export const registerIdentityAction = {
     const params = parseParamsFromText(message.content.text);
     const validated = registerSchema.parse(params);
 
-    const { ad, account, walletClient, publicClient, chain } = getClients(runtime, {
-      requireWallet: true,
-    });
-    if (!account || !walletClient || !publicClient) throw new Error('AGENT_PRIVATE_KEY not set');
+    const { ad, account } = getClients(runtime, { requireWallet: true });
+    if (!account) throw new Error('AGENT_PRIVATE_KEY not set');
 
     // The domain owner, set once for the agent (OPENSIGNET_REGISTRANT, as JSON): registries
     // require it for every domain.
@@ -266,44 +252,8 @@ export const registerIdentityAction = {
       wallet: account.address,
     } as any);
 
-    let autoRenewMsg = '';
-    if (validated.autoRenew) {
-      const vaultAddress = runtime.getSetting('RENEWAL_VAULT_ADDRESS');
-      if (vaultAddress) {
-        try {
-          const txHash = await walletClient.sendTransaction({
-            to: vaultAddress as `0x${string}`,
-            data: encodeElizaAutoRenewCalldata(
-              BigInt(result.nftTokenId),
-              runtime.getSetting('OPENSIGNET_BUILDER_CODE'),
-            ),
-            chain,
-            account,
-          });
-          let receipt;
-          try {
-            receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-          } catch (e) {
-            throw new Error(
-              `Auto-renew transaction ${txHash} was submitted but confirmation failed or remained pending: ${String(e)}`,
-            );
-          }
-          if (receipt.status !== 'success') {
-            throw new Error(
-              `Auto-renew transaction ${txHash} confirmed with status ${receipt.status}; auto-renew was not enabled.`,
-            );
-          }
-          autoRenewMsg = ` Auto-renew enabled via tx ${txHash}.`;
-        } catch (e) {
-          autoRenewMsg = ` Failed to enable auto-renew automatically: ${String(e)}`;
-        }
-      } else {
-        autoRenewMsg = ' (Requires RENEWAL_VAULT_ADDRESS env var to enable auto-renew on-chain).';
-      }
-    }
-
     return {
-      text: `Registered ${result.domain}${result.basename ? ` and ${result.basename}` : ''}. Token #${result.nftTokenId}.${autoRenewMsg}`,
+      text: `Registered ${result.domain}${result.basename ? ` and ${result.basename}` : ''}.${validated.autoRenew ? ' It renews automatically each year.' : ' Automatic renewal is off.'}`,
       data: result,
     };
   },
@@ -486,55 +436,53 @@ export const deleteEmailAliasAction = {
 
 export const renewalStatusAction = {
   name: 'GET_RENEWAL_STATUS',
-  description: 'Get RenewalVault balance, shortfall, renewal amount, and auto-renew state.',
-  similes: ['RENEWAL_STATUS', 'CHECK_RENEWAL', 'VAULT_STATUS'],
+  description:
+    'How an identity’s domain renews: on or off, how it is paid, its yearly price, when it is charged and what stands in the way.',
+  similes: ['RENEWAL_STATUS', 'CHECK_RENEWAL'],
   examples: [],
   validate: async (runtime: IAgentRuntime) =>
     Boolean(runtime.getSetting('AGENT_PRIVATE_KEY') || runtime.getSetting('OPENSIGNET_API_KEY')),
   handler: async (runtime: IAgentRuntime, message: Memory) => {
     const { ad } = getClients(runtime);
     const agentId = requireAgentId(message.content.text);
-    const status = await ad.getRenewalStatus(agentId);
+    const status = await ad.getRenewal(agentId);
+    const price = status.price
+      ? `$${(Number(status.price) / 1e6).toFixed(2)} a year`
+      : 'price not available yet';
+    const state = status.autoRenew
+      ? `renews automatically from the ${status.method === 'card' ? 'saved card' : 'OpenSignet wallet'}`
+      : 'does not renew automatically';
+    const next = status.ready ? ' Nothing stands in the way.' : ` ${status.issue?.message ?? ''}`;
     return {
-      text: `Renewal for ${status.domain}: next $${status.nextRenewalAmountUsdc}, balance $${status.vaultBalanceUsdc}, shortfall $${status.shortfallUsdc}, auto-renew ${status.autoRenewEnabled ? 'enabled' : 'off'}.`,
+      text: `${status.domain} ${state} (${price}).${next}`.trim(),
       data: status,
     };
   },
 };
 
-export const fundRenewalAction = {
-  name: 'FUND_RENEWAL_VAULT',
-  description: 'Deposit USDC into an AgentID renewal vault.',
-  similes: ['DEPOSIT_RENEWAL', 'FUND_VAULT'],
-  examples: [],
-  validate: async (runtime: IAgentRuntime) => Boolean(runtime.getSetting('AGENT_PRIVATE_KEY')),
-  handler: async (runtime: IAgentRuntime, message: Memory) => {
-    const { ad } = getClients(runtime, { requireWallet: true });
-    const agentId = requireAgentId(message.content.text);
-    const amountUsdc = parseAmountUsdc(message.content.text);
-    const result = await ad.fundRenewalVault(agentId, amountUsdc);
-    return {
-      text: `Deposited $${amountUsdc} USDC into renewal vault for ${result.domain}.`,
-      data: result,
-    };
-  },
-};
+/** "turn off", "stop", "disable" or "cancel" mean off; anything else asks for on. */
+export function wantsAutoRenew(text: string): boolean {
+  return !/\b(?:off|stop|disable|cancel|don[’']t|do not)\b/i.test(text);
+}
 
-export const enableAutoRenewAction = {
-  name: 'ENABLE_AUTO_RENEW',
-  description: 'Enable on-chain RenewalVault auto-renew for an OpenSignet identity.',
-  similes: ['AUTO_RENEW', 'ENABLE_RENEWAL'],
+export const setAutoRenewAction = {
+  name: 'SET_AUTO_RENEW',
+  description:
+    'Turn automatic renewal of an identity’s domain on or off. Renewals from the OpenSignet wallet need the owner’s approval once on opensignet.com.',
+  similes: ['AUTO_RENEW', 'ENABLE_AUTO_RENEW', 'DISABLE_AUTO_RENEW', 'STOP_RENEWAL'],
   examples: [],
   validate: async (runtime: IAgentRuntime) =>
-    Boolean(runtime.getSetting('AGENT_PRIVATE_KEY') && runtime.getSetting('RENEWAL_VAULT_ADDRESS')),
+    Boolean(runtime.getSetting('AGENT_PRIVATE_KEY') || runtime.getSetting('OPENSIGNET_API_KEY')),
   handler: async (runtime: IAgentRuntime, message: Memory) => {
-    const { ad } = getClients(runtime, { requireWallet: true });
+    const { ad } = getClients(runtime);
     const agentId = requireAgentId(message.content.text);
-    const result = await ad.setAutoRenew(agentId, true, {
-      renewalVaultAddress: runtime.getSetting('RENEWAL_VAULT_ADDRESS') as Address,
-      waitForReceipt: true,
-    });
-    return { text: `Auto-renew enabled for token #${result.tokenId}.`, data: result };
+    const result = await ad.setAutoRenew(agentId, wantsAutoRenew(message.content.text));
+    return {
+      text: result.autoRenew
+        ? `${result.domain} now renews automatically.`
+        : `${result.domain} no longer renews automatically; the owner is reminded before it expires.`,
+      data: result,
+    };
   },
 };
 
@@ -709,7 +657,7 @@ export const servicePlanStatusAction = {
     const agentId = requireAgentId(message.content.text);
     const result = await ad.getServicePlan(agentId);
     return {
-      text: `${result.domain} is on the account's ${result.entitlement.plan} plan. Email limit ${result.entitlement.limits.monthlyEmails}/month combined, DNS limit ${result.entitlement.limits.dnsRecords}.`,
+      text: `This identity is on the account's ${result.entitlement.plan} plan: ${result.entitlement.limits.monthlyEmails} emails a month, ${result.entitlement.limits.dnsRecords} DNS records.${result.renewal ? ` The plan ${result.renewal.autoRenew ? 'renews' : 'ends'} on ${result.renewal.periodEnd}.` : ''}`,
       data: result,
     };
   },
@@ -731,8 +679,7 @@ export const openSignetPlugin = {
     createEmailAliasAction,
     deleteEmailAliasAction,
     renewalStatusAction,
-    fundRenewalAction,
-    enableAutoRenewAction,
+    setAutoRenewAction,
     dnsCapabilitiesAction,
     listDnsAction,
     createDnsAction,

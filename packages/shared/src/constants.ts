@@ -5,8 +5,6 @@ export const RENEWAL_TRIGGER_DAYS_BEFORE = 30;
 export const MIN_COMMITMENT_AGE_SECONDS = 60;
 export const MIN_REGISTRATION_DURATION_SECONDS = 31_536_000;
 export const EMAIL_FEE_USDC_ATOMIC = 0n;
-/** Minimum renewal amount configured on the deployed RenewalVault; the onchain value is authoritative. */
-export const MINIMUM_RENEWAL_FEE_USDC_ATOMIC = 3_900_000n;
 export const BASENAME_FEE_USDC_ATOMIC = 0n;
 export const ENS_FEE_USDC_ATOMIC = 0n;
 export const BASENAME_PRICE_BUFFER_BPS = 12_000n;

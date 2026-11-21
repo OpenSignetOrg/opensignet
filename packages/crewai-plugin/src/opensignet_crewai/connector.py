@@ -1,4 +1,4 @@
-"""Read-only native CrewAI -> stdio MCP -> OpenSignet SDK integration."""
+"""Read-only native CrewAI -> stdio MCP -> OpenSignet: domain availability and renewal."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from importlib.metadata import version
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 from typing import Any
@@ -31,12 +32,12 @@ from crewai.events.utils.console_formatter import (
     should_suppress_console_output,
 )
 from mcp import StdioServerParameters
-from pydantic import BaseModel, ConfigDict, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 READ_ONLY_TOOLS = (
-    "inspect_agent_renewal",
-    "prepare_auto_renew_change",
+    "check_domain_availability",
+    "get_renewal_status",
 )
 
 # OS process plumbing only. Never copy os.environ into the Node child.
@@ -65,58 +66,62 @@ PROCESS_ENV_NAMES = frozenset(
 
 
 class WorkflowError(RuntimeError):
-    """An observation failed or cannot safely support an unsigned plan."""
+    """A read failed, or its answer could not be trusted."""
 
 
-class IdentityArguments(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        strict=True,
-        json_schema_extra={
-            "oneOf": [{"required": ["domain"]}, {"required": ["tokenId"]}]
-        },
-    )
-
-    domain: str | None = None
-    tokenId: str | None = None
-    expectedOwner: str | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def exact_selector(cls, value: Any) -> Any:
-        if not isinstance(value, dict):
-            raise ValueError("Identity input must be an object")
-        if ("domain" in value) == ("tokenId" in value):
-            raise ValueError("Supply exactly one domain or decimal tokenId")
-        if any(item is None for item in value.values()):
-            raise ValueError("Omit optional fields instead of supplying null")
-        return value
-
-    @model_serializer(mode="wrap")
-    def omit_absent_fields(self, handler: Any) -> dict[str, Any]:
-        # CrewAI 1.15.21 otherwise serializes absent optional MCP strings as null.
-        return {key: value for key, value in handler(self).items() if value is not None}
+# The identity's API key, as the dashboard shows it once: "osk_" and 43 base62 characters.
+API_KEY_PATTERN = re.compile(r"^osk_[0-9A-Za-z]{43}$")
+UUID_PATTERN = (
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 
 
-class AutoRenewArguments(BaseModel):
+class AvailabilityArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    tokenId: str
-    expectedOwner: str
-    enabled: bool
-    builderCode: str
+    name: str = Field(
+        min_length=1, max_length=63, pattern=r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+    )
+    tld: str = Field(min_length=2, max_length=24, pattern=r"^[a-z]+$")
 
 
-def child_environment(source: Mapping[str, str] | None = None) -> dict[str, str]:
+class AgentArguments(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    agentId: str = Field(pattern=UUID_PATTERN)
+
+
+ARGUMENTS: dict[str, type[BaseModel]] = {
+    "check_domain_availability": AvailabilityArguments,
+    "get_renewal_status": AgentArguments,
+}
+
+# The MCP schemas these tools must keep: property name -> JSON type.
+EXPECTED_SCHEMAS: dict[str, dict[str, str]] = {
+    "check_domain_availability": {"name": "string", "tld": "string"},
+    "get_renewal_status": {"agentId": "string"},
+}
+
+
+def child_environment(
+    source: Mapping[str, str] | None = None, api_key: str | None = None
+) -> dict[str, str]:
+    """OS plumbing, read-only mode and, only when the host passes one, the identity's API key."""
     source = os.environ if source is None else source
     result = {
         key: value for key, value in source.items() if key.upper() in PROCESS_ENV_NAMES
     }
     result["OPENSIGNET_ENABLE_WRITE_TOOLS"] = "false"
+    if api_key is not None:
+        if not API_KEY_PATTERN.fullmatch(api_key):
+            raise ValueError("The API key is not an OpenSignet API key (osk_…)")
+        result["OPENSIGNET_API_KEY"] = api_key
     return result
 
 
-def server_parameters(entry: Path, node: str = "node") -> StdioServerParameters:
+def server_parameters(
+    entry: Path, node: str = "node", api_key: str | None = None
+) -> StdioServerParameters:
     entry = entry.expanduser().resolve(strict=True)
     if not entry.is_file() or entry.suffix not in {".js", ".mjs"}:
         raise ValueError("Point --server to the trusted installed MCP JavaScript entry")
@@ -126,7 +131,7 @@ def server_parameters(entry: Path, node: str = "node") -> StdioServerParameters:
     return StdioServerParameters(
         command=str(Path(executable).resolve(strict=True)),
         args=[str(entry)],
-        env=child_environment(),
+        env=child_environment(api_key=api_key),
     )
 
 
@@ -135,19 +140,32 @@ def constrain_tools(tools: Sequence[BaseTool]) -> dict[str, BaseTool]:
     if len(names) != len(READ_ONLY_TOOLS) or set(names) != set(READ_ONLY_TOOLS):
         raise WorkflowError(
             "MCP tool contract mismatch. Use the reviewed @opensignet/mcp-server "
-            f"{version('opensignet-crewai')} build with all three canonical read-only tools."
+            f"{version('opensignet-crewai')} build with every read-only tool this package uses."
         )
     by_name = {tool.name: tool for tool in tools}
     selected = {name: by_name[name] for name in READ_ONLY_TOOLS}
     for name, tool in selected.items():
         # Public BaseTool schema hook; the official MCP transport/call stays intact.
-        tool.args_schema = (
-            AutoRenewArguments
-            if name == "prepare_auto_renew_change"
-            else IdentityArguments
-        )
+        tool.args_schema = ARGUMENTS[name]
         tool.cache_function = lambda _arguments, _result: False
     return selected
+
+
+def compatible(definition: Mapping[str, Any], name: str) -> bool:
+    schema = definition.get("inputSchema", {})
+    expected = EXPECTED_SCHEMAS[name]
+    properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+    return (
+        definition.get("name") == name
+        and isinstance(schema, dict)
+        and schema.get("type") == "object"
+        and isinstance(properties, dict)
+        and set(properties) == set(expected)
+        and all(
+            isinstance(properties[key], dict) and properties[key].get("type") == kind
+            for key, kind in expected.items()
+        )
+    )
 
 
 @contextmanager
@@ -155,6 +173,8 @@ def native_tools(parameters: StdioServerParameters) -> Iterator[dict[str, BaseTo
     active = True
     previous_console_suppression = should_suppress_console_output()
     set_suppress_console_output(True)
+    environment = parameters.env or {}
+    child = child_environment(environment, environment.get("OPENSIGNET_API_KEY"))
 
     def client_factory() -> MCPClient:
         if not active:
@@ -163,7 +183,7 @@ def native_tools(parameters: StdioServerParameters) -> Iterator[dict[str, BaseTo
             transport=StdioTransport(
                 command=parameters.command,
                 args=list(parameters.args),
-                env=child_environment(parameters.env or {}),
+                env=dict(child),
             ),
             # The native client's range(max_retries) counts total attempts.
             max_retries=1,
@@ -185,41 +205,7 @@ def native_tools(parameters: StdioServerParameters) -> Iterator[dict[str, BaseTo
             name = definition.get("original_name")
             if name not in READ_ONLY_TOOLS:
                 continue
-            schema = definition.get("inputSchema", {})
-            expected = (
-                {
-                    "tokenId": "string",
-                    "expectedOwner": "string",
-                    "enabled": "boolean",
-                    "builderCode": "string",
-                }
-                if name == "prepare_auto_renew_change"
-                else {
-                    "domain": "string",
-                    "tokenId": "string",
-                    "expectedOwner": "string",
-                }
-            )
-            properties = (
-                schema.get("properties", {}) if isinstance(schema, dict) else {}
-            )
-            if (
-                definition.get("name") != name
-                or not isinstance(schema, dict)
-                or schema.get("type") != "object"
-                or schema.get("additionalProperties") is not False
-                or not isinstance(properties, dict)
-                or set(properties) != set(expected)
-                or any(
-                    not isinstance(properties[key], dict)
-                    or properties[key].get("type") != kind
-                    for key, kind in expected.items()
-                )
-                or (
-                    name == "prepare_auto_renew_change"
-                    and set(schema.get("required", [])) != set(expected)
-                )
-            ):
+            if not compatible(definition, name):
                 raise WorkflowError(
                     "MCP server returned an incompatible read-only tool schema"
                 )
@@ -230,9 +216,7 @@ def native_tools(parameters: StdioServerParameters) -> Iterator[dict[str, BaseTo
                 server_name="opensignet",
                 tool_schema={
                     "description": definition.get("description", ""),
-                    "args_schema": AutoRenewArguments
-                    if name == "prepare_auto_renew_change"
-                    else IdentityArguments,
+                    "args_schema": ARGUMENTS[name],
                 },
             )
             native.name = name
@@ -245,104 +229,59 @@ def native_tools(parameters: StdioServerParameters) -> Iterator[dict[str, BaseTo
 
 
 @contextmanager
-def readonly_tools(entry: Path, node: str = "node") -> Iterator[dict[str, BaseTool]]:
-    with native_tools(server_parameters(entry, node)) as tools:
+def readonly_tools(
+    entry: Path, node: str = "node", api_key: str | None = None
+) -> Iterator[dict[str, BaseTool]]:
+    with native_tools(server_parameters(entry, node, api_key)) as tools:
         yield tools
 
 
 def call_json(tool: BaseTool, arguments: dict[str, Any]) -> dict[str, Any]:
     raw = tool.run(**arguments)
     if isinstance(raw, ToolFailure):
-        raise WorkflowError(f"{tool.name} failed; no plan or approval was produced")
+        raise WorkflowError(f"{tool.name} failed; nothing was confirmed")
     try:
         result = json.loads(raw)
     except (TypeError, json.JSONDecodeError) as error:
-        raise WorkflowError(f"{tool.name} did not return a JSON observation") from error
+        raise WorkflowError(f"{tool.name} did not return a JSON answer") from error
     if not isinstance(result, dict) or "error" in result:
-        raise WorkflowError(f"{tool.name} failed; no plan or approval was produced")
+        raise WorkflowError(f"{tool.name} failed; nothing was confirmed")
     return result
 
 
-def require_owned_identity(identity: dict[str, Any], expected_owner: str) -> None:
-    details = identity.get("identity", {})
-    checks = identity.get("checks", {})
-    if (
-        identity.get("status") != "found"
-        or identity.get("chainId") != 8453
-        or identity.get("consistent") is not True
-        or not isinstance(checks, dict)
-        or checks.get("expectedOwnerMatches") is not True
-        or not isinstance(details, dict)
-        or str(details.get("owner", "")).lower() != expected_owner.lower()
-        or str(identity.get("nftOwner", "")).lower() != expected_owner.lower()
-    ):
-        raise WorkflowError(
-            "Identity ownership is missing, inconsistent or does not match"
-        )
-
-
-def inspect_and_prepare(
-    tools: Mapping[str, BaseTool],
-    identity_input: dict[str, Any],
-    *,
-    expected_owner: str,
-    enabled: bool,
-    builder_code: str,
+def domain_availability(
+    tools: Mapping[str, BaseTool], name: str, tld: str
 ) -> dict[str, Any]:
-    if (
-        "expectedOwner" in identity_input
-        and identity_input["expectedOwner"] != expected_owner
-    ):
-        raise WorkflowError("Conflicting expected owners were supplied")
-    selector = IdentityArguments.model_validate(
-        {**identity_input, "expectedOwner": expected_owner}
+    """Whether `name.tld` can be registered, with its price."""
+    request = AvailabilityArguments.model_validate(
+        {"name": name, "tld": tld}
     ).model_dump()
-    # The renewal observation carries the identity, so ownership is checked on the same read.
-    renewal = call_json(tools["inspect_agent_renewal"], selector)
-    identity = renewal.get("identity", {})
-    if renewal.get("status") == "not_found":
-        return {"identity": identity, "renewal": None, "unsignedPlan": None}
-    if renewal.get("status") != "found" or renewal.get("consistent") is not True:
-        raise WorkflowError("Renewal observations are unavailable or inconsistent")
-    require_owned_identity(identity, expected_owner)
-    token_id = identity.get("tokenId")
-    if not isinstance(token_id, str):
-        raise WorkflowError("The identity did not contain a decimal tokenId")
+    answer = call_json(tools["check_domain_availability"], request)
+    if not isinstance(answer.get("available"), bool):
+        raise WorkflowError("The availability answer is incomplete")
+    return answer
 
-    request = AutoRenewArguments.model_validate(
-        {
-            "tokenId": token_id,
-            "expectedOwner": expected_owner,
-            "enabled": enabled,
-            "builderCode": builder_code,
-        }
-    ).model_dump()
-    plan = call_json(tools["prepare_auto_renew_change"], request)
-    transaction = plan.get("transaction", {})
-    observation = plan.get("observation", {})
+
+def renewal_report(tools: Mapping[str, BaseTool], agent_id: str) -> dict[str, Any]:
+    """How the identity's domain renews, and the one thing to do next if it would not."""
+    request = AgentArguments.model_validate({"agentId": agent_id}).model_dump()
+    status = call_json(tools["get_renewal_status"], request)
+    issue = status.get("issue")
     if (
-        plan.get("kind") != "set_auto_renew"
-        or plan.get("chainId") != 8453
-        or plan.get("tokenId") != token_id
-        or str(plan.get("expectedOwner", "")).lower() != expected_owner.lower()
-        or plan.get("enabled") is not enabled
-        or plan.get("builderCode") != builder_code
-        or not isinstance(plan.get("id"), str)
-        or not isinstance(plan.get("noChange"), bool)
-        or not isinstance(transaction, dict)
-        or transaction.get("value") != "0"
-        or not isinstance(transaction.get("data"), str)
-        or not isinstance(observation, dict)
-        or observation.get("consistent") is not True
-        or transaction.get("to") != observation.get("vaultAddress")
+        str(status.get("agentId", "")).lower() != agent_id.lower()
+        or not isinstance(status.get("autoRenew"), bool)
+        or not isinstance(status.get("ready"), bool)
+        or (status["ready"] is False and not isinstance(issue, dict))
     ):
         raise WorkflowError(
-            "Unsigned plan does not match the requested setting and scope"
+            "The renewal answer is for another identity or is incomplete"
         )
-    require_owned_identity(observation.get("identity", {}), expected_owner)
-    if observation["identity"].get("tokenId") != token_id:
-        raise WorkflowError("Plan identity changed during observation")
-    return {"identity": identity, "renewal": renewal, "unsignedPlan": plan}
+    next_step = issue.get("message") if isinstance(issue, dict) else None
+    return {
+        "renewal": status,
+        "ready": status["ready"],
+        "nextStep": None if status["ready"] else next_step,
+    }
 
 
 def main() -> int:
@@ -354,38 +293,34 @@ def main() -> int:
         help="Trusted installed @opensignet/mcp-server/dist/index.js",
     )
     parser.add_argument("--node", default="node")
-    selector = parser.add_mutually_exclusive_group(required=True)
-    selector.add_argument("--domain")
-    selector.add_argument("--token-id")
-    parser.add_argument("--expected-owner", required=True)
-    parser.add_argument("--builder-code", required=True)
-    parser.add_argument("--setting", choices=("enable", "disable"), required=True)
-    args = parser.parse_args()
-    identity_input = (
-        {"domain": args.domain}
-        if args.domain is not None
-        else {"tokenId": args.token_id}
+    subject = parser.add_mutually_exclusive_group(required=True)
+    subject.add_argument("--domain", help="A domain to check, e.g. northwind.ai")
+    subject.add_argument("--agent-id", help="An identity whose renewal to read")
+    parser.add_argument(
+        "--api-key-env",
+        default="OPENSIGNET_API_KEY",
+        help="Environment variable holding the identity's API key (renewal reads only)",
     )
+    args = parser.parse_args()
     try:
-        with readonly_tools(args.server, args.node) as tools:
-            result = inspect_and_prepare(
-                tools,
-                identity_input,
-                expected_owner=args.expected_owner,
-                enabled=args.setting == "enable",
-                builder_code=args.builder_code,
-            )
+        if args.domain is not None:
+            name, _, tld = args.domain.strip().lower().partition(".")
+            with readonly_tools(args.server, args.node) as tools:
+                result = domain_availability(tools, name, tld)
+        else:
+            api_key = os.environ.get(args.api_key_env)
+            if not api_key:
+                raise WorkflowError(f"Set {args.api_key_env} to the identity's API key")
+            with readonly_tools(args.server, args.node, api_key) as tools:
+                result = renewal_report(tools, args.agent_id)
         print(json.dumps(result, indent=2))
         return 0
-    except WorkflowError as error:
-        print(f"{error}. No transaction was signed, approved or sent.", file=sys.stderr)
+    except (WorkflowError, ValueError) as error:
+        print(f"{error}. Nothing was changed.", file=sys.stderr)
         return 1
     except Exception:
         # Upstream exceptions can include local process paths or environment input.
-        print(
-            "Inspection failed. No transaction was signed, approved or sent.",
-            file=sys.stderr,
-        )
+        print("The read failed. Nothing was changed.", file=sys.stderr)
         return 1
 
 

@@ -47,7 +47,7 @@ contract OpenSignetPassTest is Checks {
     address internal stranger = makeAddr("stranger");
 
     function setUp() public {
-        pass = new OpenSignetPass(owner, "https://opensignet.com/api/v1/pass/");
+        pass = new OpenSignetPass(owner, "https://opensignet.com/pass/");
         vm.prank(owner);
         pass.setMinter(minter, true);
     }
@@ -68,7 +68,7 @@ contract OpenSignetPassTest is Checks {
         assertEq(record.ensName, "northwind.eth");
         assertEq(pass.passIdOfDomain("northwind.ai"), id);
         assertEq(pass.totalSupply(), 1);
-        assertEq(pass.tokenURI(id), "https://opensignet.com/api/v1/pass/1");
+        assertEq(pass.tokenURI(id), "https://opensignet.com/pass/1");
         assertEq(pass.name(), "OpenSignet Pass");
         assertEq(pass.symbol(), "OSPASS");
     }
